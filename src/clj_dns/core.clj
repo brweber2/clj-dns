@@ -20,7 +20,7 @@
 
 (defn dns-lookup [& to-lookups] (lookup/main (into-array String to-lookups)))
 (defn dns-lookup-by-type [rr-type & to-lookups] (lookup/main (into-array String (into ["-t" rr-type] to-lookups))))
-; todo reverse lookup?
+; - reverse lookup?
 
 (defn convert-dig-options
   [options-map]
@@ -85,7 +85,7 @@
 ;; Merge zonelets (or fragments) into a single zone
 (defn merge-zones [& zones]
   (let [new-zone (empty-zone)]
-    (doall (map (partial rrs-into new-zone) zones))))
+    (doseq (map (partial rrs-into new-zone) zones))))
 
 ;; todo need to introduce a protocol here to get the rrs from a master/zone
 ;; Get the resource records from a master file. Note that this closes the master input stream.
@@ -100,11 +100,11 @@
 
 ;; Adds all the resource records passed in to the zone
 (defn add-rrs [zone & rrs]
-  (doall (map #(.addRecord zone %) rrs)))
+  (doseq (map #(.addRecord zone %) rrs)))
 
 ;; Removes all the resource records passed in from the zone
 (defn remove-rrs [zone & rrs]
-  (doall (map #(.removeRecord zone %) rrs)))
+  (doseq (map #(.removeRecord zone %) rrs)))
 
 (defn find-records [zone zone-name zone-type]
   (.findRecords zone (to-name zone-name) (int zone-type)))
