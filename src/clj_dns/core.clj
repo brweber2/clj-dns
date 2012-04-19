@@ -1,13 +1,17 @@
 (ns clj-dns.core
-  (:import (org.xbill.DNS Name Zone Record Type Master SOARecord DClass))
+  (:import (org.xbill.DNS Name Zone Record Type Master SOARecord DClass Address))
   (:import lookup)
   (:import dig)
-  (:import java.io.File))
+  (:import java.io.File)
+  (:import java.util.List)
+  (:import clojure.lang.ISeq))
 
 (defn todo [] (throw (RuntimeException. "Not yet implemented!")))
 (declare to-name)
 (declare to-filename-string)
+(declare to-inet-address)
 (declare rr-has?)
+(declare to-list)
 (declare dummy-soa)
 (declare dummy-ns)
 (declare add-rrs)
@@ -15,6 +19,9 @@
 
 ;; ### Default values
 (def soa-defaults {})
+(def default-ttl 86400)
+(def default-dclass DClass/IN)
+(def rr-defaults {:ttl default-ttl :dclass default-dclass})
 
 ;; ## Common DNS tasks
 
@@ -25,6 +32,11 @@
 (defn convert-dig-options
   [options-map]
   (filter seq [(when (:tcp options-map) "-t") (when (:ignore-trunction options-map) "-i") (when (:print-query options-map) "-p")]))
+
+(defn all-or-none
+  [m s] ; map m must contain each keyword from s or none of them
+  (or (every? #(contains? m %) s)
+      (not-any? #(contains? m %) s)))
 
 ;; dig [@server] name [<type>] [<class>] [<options>]
 ;; type defaults to A and class defaults to IN
@@ -42,10 +54,9 @@
 ;; -e <edns> -- not supported here
 ;; -d <edns> -- not supported here
 (defn dns-dig
-  ([the-name] (dig/main (into-array String [the-name])))
-  ([the-name options-map] (dig/main (into-array String (into [the-name] (convert-dig-options options-map)))))
-  ([the-server the-name the-type] (dig/main (into-array String [the-server the-name the-type DClass/IN])))
-  ([the-server the-name the-type options-map] (dig/main (into-array String (into [the-server the-name the-type DClass/IN] (convert-dig-options options-map))))))
+  [{the-server :server the-name :name the-type :type options-map :options the-class :dclass :as the-args :or {:dclass DClass/IN}}]
+  {:pre [(all-or-none the-args [:server :type :dclass])]} ; if :server is present, :class and :type must be as well (for all permutations...)
+    (dig/main (into-array String (filter seq (into [the-server the-name the-type the-class] (convert-dig-options options-map))))))
 
 ;; ## Ways to get a zone (generally prefer a Zone over a Master)
 
@@ -110,24 +121,36 @@
   (.findRecords zone (to-name zone-name) (int zone-type)))
 
 ;; ## Resource Records
-(defn rr-ns [] (todo))
-(defn rr-ds [] (todo))
-(defn rr-soa [] (todo))
-(defn rr-txt [] (todo))
-(defn rr-mx [] (todo))
-(defn rr-cname [] (todo))
-(defn rr-ptr [] (todo))
-(defn rr-a [] (todo))
-(defn rr-aaaa [] (todo))
+(defn rr-ns [{zone-name :zone ttl :ttl the-ns :ns dclass :dclass :or rr-defaults}]
+  (NSRecord. (to-name zone-name) dclass (long ttl) (to-name the-ns)))
+(defn rr-ds [{:keys [zone dlcass ttl key-tag algorithm digest-type digest] :or rr-defaults}]
+  (DSRecord. (to-name zone) dclass (long ttl) key-tag algorithm digest-type digest)) ; key-tag is called footprint in the Java DNS library
+(defn rr-soa [{:keys [zone dclass ttl host admin serial refresh retry expire minimum] :or rr-defaults}]
+  (SOARecord. (to-name zone) dclass (long ttl) (to-name host) (to-name admin) (long serial) (long refresh) (long retry) (long expire) (long minimum)))
+(defn rr-txt [{:keys [zone dclass ttl lines] :or rr-defaults}]
+  (TXTRecord. (to-name zone) dlcass (long ttl) (to-list lines)))
+(defn rr-mx [{:keys [zone dclass ttl priority target] :or rr-defaults}] ; todo add default priority?
+  (MXRecord. (to-name zone) dclass (long ttl) (int priority) (to-name target)))
+(defn rr-cname [{:keys [zone dclass ttl alias] :or rr-defaults}]
+  (CNAMERecord. (to-name zone) dclass (long ttl) (to-name alias)))
+(defn rr-ptr [{:keys [zone dclass ttl target] :or rr-defaults}]
+  (PTRRecord. (to-name zone) dclass (long ttl) (to-name target)))
+(defn rr-a [{:keys [zone dclass ttl address] :or rr-defaults}]
+  (ARecord. (to-name zone) dclass (long ttl) (to-inet-address address)))
+(defn rr-aaaa [{:keys [zone dclass ttl address] :or rr-defaults}]
+  (ARecord. (to-name zone) dclass (long ttl) (to-inet-address address)))
 
-(defn dummy-soa [] (todo))
-(defn dummy-ns [] (todo))
+(defn dummy-soa [] (rr-soa {:zone "." :host "." :admin "." 0 0 0 0 0}))
+(defn dummy-ns [] (rr-ns {:zone "." :ns "."}))
 
-;; ## Helper functions (todo protocol better for the isa? cases...?)
-(defn to-filename-string [f] (if (isa? File f) (.getAbsolutePath f) (str f)))
+;; ## Helper functions (todo protocol better for the instance? cases...?)
+(defn to-inet-address [a] (Address/getByName (name a)))
+(defn to-list [x] ; could have a single element, seq or java.util.List
+  (condp instance? x String (apply list (flatten [x])) List x ISeq (apply list x)))
+(defn to-filename-string [f] (if (instance? File f) (.getAbsolutePath f) (str f)))
 (defn ensure-trailing-period [a] (let [s (name a)](if-not (.endsWith s ".") (str s ".") s)))
 (defn dns-name [s] (Name. (ensure-trailing-period s)))
-(defn to-name [n] (if (isa? Name n) n (dns-name n)))
+(defn to-name [n] (if (instance? Name n) n (dns-name n)))
 (defn sub-domain? [a b] (.subdomain (to-name a) (to-name b)))
 (defn rr-has? [rr-type & rrs] (some #(= rr-type (.getType %)) rrs))
 
