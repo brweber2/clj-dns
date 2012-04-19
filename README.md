@@ -1,8 +1,8 @@
 # com.brweber2/clj-dns
 
-Clojure wrapper library for (dnsjava)[http://www.xbill.org/dnsjava]
+Clojure wrapper library for [dnsjava](http://www.xbill.org/nsjava)
 
-This project can be found on github at (clj-dns)[https://github.com/brweber2/clj-dns].
+This project can be found on github at [clj-dns](https://github.com/brweber2/clj-dns).
 
 ## Comments
 
