@@ -3060,7 +3060,9 @@ net.brehaut.ClojureTools = (function (SH) {
 </td><td class="codes"><pre class="brush: clojure">(defn all-or-none
   [m s] ; map m must contain each keyword from s or none of them
   (or (every? #(contains? m %) s)
-      (not-any? #(contains? m %) s)))</pre></td></tr><tr><td class="docs"><p>dig [@server] name [<type>] [<class>] [<options>]
+      (not-any? #(contains? m %) s)))</pre></td></tr><tr><td class="docs"><p>dig [@server] name [<type>] [<class>] [<options>]</p>
+
+<pre><code>
 type defaults to A and class defaults to IN
 we might not want type A, but we're always going to default to class IN
 use -x <name> for "name" to get a reverse lookup
@@ -3072,9 +3074,10 @@ here are the supported options...
 -q -- print the query
 (example-dig-options {:tcp true :ignore-trunction true :print-query true})
 and options I decided not to support
--k &lt;TSIG> -- not supported here
+-k <TSIG> -- not supported here
 -e <edns> -- not supported here
--d <edns> -- not supported here</p>
+-d <edns> -- not supported here
+</code></pre>
 </td><td class="codes"><pre class="brush: clojure">(defn dns-dig
   [{the-server :server the-name :name the-type :type options-map :options the-class :dclass :as the-args :or {:dclass DClass/IN}}]
   {:pre [(all-or-none the-args [:server :type :dclass])]} ; if :server is present, :class and :type must be as well (for all permutations...)
@@ -3136,9 +3139,9 @@ Get the resource records from a master file. Note that this closes the master in
   (ARecord. (to-name zone) dclass (long ttl) (to-inet-address address)))</pre></td></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(defn dummy-soa [zone-name] (rr-soa {:zone zone-name :dclass default-dclass :ttl default-ttl :host zone-name :admin zone-name :serial 0 :refresh 0 :retry 0 :expire 0 :minimum 0}))
 (defn dummy-ns [zone-name] (rr-ns {:zone zone-name :dclass default-dclass :ttl default-ttl :ns zone-name}))</pre></td></tr><tr><td class="docs"><h2>Helper functions (todo protocol better for the instance? cases...?)</h2>
-</td><td class="codes"><pre class="brush: clojure">(defn to-inet-address [a] (Address/getByName (name a)))
-(defn to-list [x] ; could have a single element, seq or java.util.List
-  (condp instance? x String (apply list (flatten [x])) List x ISeq (apply list x)))
+</td><td class="codes"></td></tr><tr><td class="docs">
+</td><td class="codes"><pre class="brush: clojure">(defn to-inet-address [a] (Address/getByName (name a)))</pre></td></tr><tr><td class="docs"><p>could have a single element, seq or java.util.List</p>
+</td><td class="codes"><pre class="brush: clojure">(defn to-list [x] (condp instance? x String (apply list (flatten [x])) List x ISeq (apply list x)))
 (defn to-filename-string [f] (if (instance? File f) (.getAbsolutePath f) (str f)))
 (defn ensure-trailing-period [a] (let [s (name a)](if-not (.endsWith s &quot;.&quot;) (str s &quot;.&quot;) s)))
 (defn dns-name [s] (Name. (ensure-trailing-period s)))

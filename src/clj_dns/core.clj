@@ -27,7 +27,7 @@
 
 (defn dns-lookup [& to-lookups] (lookup/main (into-array String to-lookups)))
 (defn dns-lookup-by-type [rr-type & to-lookups] (lookup/main (into-array String (into ["-t" rr-type] to-lookups))))
-; - reverse lookup?
+; todo - reverse lookup?
 
 (defn convert-dig-options
   [options-map]
@@ -39,6 +39,7 @@
       (not-any? #(contains? m %) s)))
 
 ;; dig [@server] name [<type>] [<class>] [<options>]
+;; <pre><code>
 ;; type defaults to A and class defaults to IN
 ;; we might not want type A, but we're always going to default to class IN
 ;; use -x <name> for "name" to get a reverse lookup
@@ -53,6 +54,7 @@
 ;; -k <TSIG> -- not supported here
 ;; -e <edns> -- not supported here
 ;; -d <edns> -- not supported here
+;; </code></pre>
 (defn dns-dig
   [{the-server :server the-name :name the-type :type options-map :options the-class :dclass :as the-args :or {:dclass DClass/IN}}]
   {:pre [(all-or-none the-args [:server :type :dclass])]} ; if :server is present, :class and :type must be as well (for all permutations...)
@@ -144,9 +146,10 @@
 (defn dummy-ns [zone-name] (rr-ns {:zone zone-name :dclass default-dclass :ttl default-ttl :ns zone-name}))
 
 ;; ## Helper functions (todo protocol better for the instance? cases...?)
+
 (defn to-inet-address [a] (Address/getByName (name a)))
-(defn to-list [x] ; could have a single element, seq or java.util.List
-  (condp instance? x String (apply list (flatten [x])) List x ISeq (apply list x)))
+;; could have a single element, seq or java.util.List
+(defn to-list [x] (condp instance? x String (apply list (flatten [x])) List x ISeq (apply list x)))
 (defn to-filename-string [f] (if (instance? File f) (.getAbsolutePath f) (str f)))
 (defn ensure-trailing-period [a] (let [s (name a)](if-not (.endsWith s ".") (str s ".") s)))
 (defn dns-name [s] (Name. (ensure-trailing-period s)))
