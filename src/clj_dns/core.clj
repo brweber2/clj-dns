@@ -1,5 +1,5 @@
 (ns clj-dns.core
-  (:import (org.xbill.DNS Name Zone Record Type Master SOARecord DClass Address))
+  (:import (org.xbill.DNS Name Zone Record Type Master DClass Address SOARecord NSRecord DSRecord CNAMERecord TXTRecord ARecord AAAARecord MXRecord PTRRecord))
   (:import lookup)
   (:import dig)
   (:import java.io.File)
@@ -74,7 +74,7 @@
 ;; and later stitched together to form a complete zone.
 (defn empty-zone
   [zone-name]
-  (let [placeholder-soa (dummy-soa) placeholder-ns (dummy-ns)]
+  (let [placeholder-soa (dummy-soa zone-name) placeholder-ns (dummy-ns zone-name)]
   (doto (Zone. (to-name zone-name) (into-array Record [placeholder-soa placeholder-ns]))
     (.removeRecord placeholder-soa)
     (.removeRecord placeholder-ns))))
@@ -96,7 +96,7 @@
 ;; Merge zonelets (or fragments) into a single zone
 (defn merge-zones [& zones]
   (let [new-zone (empty-zone)]
-    (doseq (map (partial rrs-into new-zone) zones))))
+    (doseq [] (map (partial rrs-into new-zone) zones))))
 
 ;; todo need to introduce a protocol here to get the rrs from a master/zone
 ;; Get the resource records from a master file. Note that this closes the master input stream.
@@ -111,11 +111,11 @@
 
 ;; Adds all the resource records passed in to the zone
 (defn add-rrs [zone & rrs]
-  (doseq (map #(.addRecord zone %) rrs)))
+  (doseq [] (map #(.addRecord zone %) rrs)))
 
 ;; Removes all the resource records passed in from the zone
 (defn remove-rrs [zone & rrs]
-  (doseq (map #(.removeRecord zone %) rrs)))
+  (doseq [] (map #(.removeRecord zone %) rrs)))
 
 (defn find-records [zone zone-name zone-type]
   (.findRecords zone (to-name zone-name) (int zone-type)))
@@ -123,12 +123,12 @@
 ;; ## Resource Records
 (defn rr-ns [{zone-name :zone ttl :ttl the-ns :ns dclass :dclass :or rr-defaults}]
   (NSRecord. (to-name zone-name) dclass (long ttl) (to-name the-ns)))
-(defn rr-ds [{:keys [zone dlcass ttl key-tag algorithm digest-type digest] :or rr-defaults}]
+(defn rr-ds [{:keys [zone dclass ttl key-tag algorithm digest-type digest] :or rr-defaults}]
   (DSRecord. (to-name zone) dclass (long ttl) key-tag algorithm digest-type digest)) ; key-tag is called footprint in the Java DNS library
 (defn rr-soa [{:keys [zone dclass ttl host admin serial refresh retry expire minimum] :or rr-defaults}]
   (SOARecord. (to-name zone) dclass (long ttl) (to-name host) (to-name admin) (long serial) (long refresh) (long retry) (long expire) (long minimum)))
 (defn rr-txt [{:keys [zone dclass ttl lines] :or rr-defaults}]
-  (TXTRecord. (to-name zone) dlcass (long ttl) (to-list lines)))
+  (TXTRecord. (to-name zone) dclass (long ttl) (to-list lines)))
 (defn rr-mx [{:keys [zone dclass ttl priority target] :or rr-defaults}] ; todo add default priority?
   (MXRecord. (to-name zone) dclass (long ttl) (int priority) (to-name target)))
 (defn rr-cname [{:keys [zone dclass ttl alias] :or rr-defaults}]
@@ -140,8 +140,8 @@
 (defn rr-aaaa [{:keys [zone dclass ttl address] :or rr-defaults}]
   (ARecord. (to-name zone) dclass (long ttl) (to-inet-address address)))
 
-(defn dummy-soa [] (rr-soa {:zone "." :host "." :admin "." 0 0 0 0 0}))
-(defn dummy-ns [] (rr-ns {:zone "." :ns "."}))
+(defn dummy-soa [zone-name] (rr-soa {:zone zone-name :dclass default-dclass :ttl default-ttl :host zone-name :admin zone-name :serial 0 :refresh 0 :retry 0 :expire 0 :minimum 0}))
+(defn dummy-ns [zone-name] (rr-ns {:zone zone-name :dclass default-dclass :ttl default-ttl :ns zone-name}))
 
 ;; ## Helper functions (todo protocol better for the instance? cases...?)
 (defn to-inet-address [a] (Address/getByName (name a)))
