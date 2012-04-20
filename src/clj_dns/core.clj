@@ -158,11 +158,18 @@
       (.removeRecord placeholder-soa)
       (.removeRecord placeholder-ns))))
 
+;; Creates a completely empty zone. The idea is that you can build up pieces of a zone from these empty zones and merge them with merge-zones.
 (defn empty-zone [] (zone-fragment "."))
 
 ;; zone passed in can be a File or InputStream
 (defn parse-master [zone]
   (Master. zone))
+
+;; ## Things you can do with a RRSet
+;; Generally, prefer to get a seq of resource records, but Java DNS has these RRSet objects, so we expose them as an intermediate abstraction.
+
+(defn rrs-from-rrset [rrset]
+  (iterator-seq (.rrs rrset)))
 
 ;; ## Things you can do with a zone
 
@@ -176,34 +183,25 @@
     (doseq [rr rrs] (.addRecord zone rr))
     zone))
 
+;; Get a seq of the rrsets from a zone. Prefer rrs-from-zone which gets a seq of the resource records in this seq of RRSet's
 (defn rrsets-from-zone [zone]
   (try
     (iterator-seq (.iterator zone))
     (catch ArrayIndexOutOfBoundsException e [])))
-
-(defn rrs-from-rrset [rrset]
-  (iterator-seq (.rrs rrset)))
 
 ;; Get the resource records from a zone.
 (defn rrs-from-zone [zone]
   (flatten (map rrs-from-rrset (rrsets-from-zone zone))))
 
 ;; merge resource records from b into a
-(defn rrs-into [a b]
-  (apply add-rrs a (rrs-from-zone b)))
+(defn rrs-into [zone-a zone-b]
+  (apply add-rrs zone-a (rrs-from-zone zone-b)))
 
 ;; Merge zonelets (or fragments) into a single zone
 (defn merge-zones [& zones]
   (let [the-new-zone (empty-zone)]
     (doseq [z zones] (rrs-into the-new-zone z))
     the-new-zone))
-
-;; todo need to introduce a protocol here to get the rrs from a master/zone
-;; Get the resource records from a master file. Note that this closes the master input stream.
-(defn rrs-from-master [master]
-  (let [v (.nextRecord master)]
-    (when-not (nil? v)
-      (lazy-seq (cons v (rrs-from-master master))))))
 
 ;; Removes all the resource records passed in from the zone
 (defn remove-rrs [zone & rrs]
@@ -216,3 +214,13 @@
 ;; This returns a seq of all the resource records from a zone.
 (defn find-records [zone zone-name zone-type]
   (doall (map #(rrs-from-rrset %) (find-rrsets zone zone-name zone-type))))
+
+;; ## Master files
+
+;; Prefer a zone to a master file
+;; todo need to introduce a protocol here to get the rrs from a master/zone?
+;; Get the resource records from a master file. Note that this closes the master input stream. 
+(defn rrs-from-master [master]
+  (let [v (.nextRecord master)]
+    (when-not (nil? v)
+      (lazy-seq (cons v (rrs-from-master master))))))
