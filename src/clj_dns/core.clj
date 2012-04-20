@@ -156,7 +156,7 @@
       (.removeRecord placeholder-soa)
       (.removeRecord placeholder-ns))))
 
-(defn empty-zone [] (zone-framgment "."))
+(defn empty-zone [] (zone-fragment "."))
 
 ;; zone passed in can be a File or InputStream
 (defn parse-master [zone]
@@ -172,9 +172,15 @@
 (defn add-rrs [zone & rrs]
   (doseq [] (map #(.addRecord zone %) rrs)))
 
-; Get the resource records from a zone.
-(defn rrs-from-zone [zone]
+(defn rrsets-from-zone [zone]
   (iterator-seq (.iterator zone)))
+
+(defn rrs-from-rrset [rrset]
+  (iterator-seq (.rrs rrset)))
+
+;; Get the resource records from a zone.
+(defn rrs-from-zone [zone]
+  (doseq [] (map rrs-from-rrset (rrsets-from-zone zone))))
 
 ;; merge resource records from b into a
 (defn rrs-into [a b]
