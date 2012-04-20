@@ -15,10 +15,13 @@
   :expire 691200  ; 1 week 1 day
   :minimum 10800  ; 3 hours
   })
+
 ;; TTL is time-to-live
 (def dflt-ttl 86400) ; 1 day
+
 ;; IN is for Internet. I can almost guarantee this is what you want :)
 (def dflt-dclass DClass/IN)
+
 ;; Map of default values for resource record creation (making these optional parameters essentially)
 (def rr-defaults {:ttl dflt-ttl :dclass dflt-dclass})
 
@@ -26,18 +29,25 @@
 
 ;; Convert a string, keyword or symbol to a java.net.InetAddress
 (defn to-inet-address [a] (Address/getByName (name a)))
+
 ;; Convert a single element, clojure.lang.ISeq or java.util.List to a java.util.List
 (defn to-list [x] (condp instance? x String (apply list (flatten [x])) List x ISeq (apply list x)))
+
 ;; Convert a File to its aboslute path, otherwise assume the string value is a path
 (defn to-filename-string [f] (if (instance? File f) (.getAbsolutePath f) (str f)))
+
 ;; Stick a trailing '.' on the end of the string (keyword or symbol) if one is not already present
 (defn ensure-trailing-period [a] (let [s (name a)](if-not (.endsWith s ".") (str s ".") s)))
+
 ;; Convert the value passed in to a org.xbill.DNS.Name (prefer calling the to-name function below)
 (defn dns-name [s] (Name. (ensure-trailing-period s)))
+
 ;; Conver the value passed in to a org.xbill.DNS.Name if it is not one already
 (defn to-name [n] (if (instance? Name n) n (dns-name n)))
+
 ;; Given two org.xbill.DNS.Name instances, check if b is a subdomain of a
 (defn sub-domain? [a b] (.subdomain (to-name a) (to-name b)))
+
 ;; Predicate that checks if any resource record in the rrs seq has the provided resource record type
 ;; The rr-type is an int, but there are constants for the values on org.xbill.DNS.Type (e.g. Type/NS)
 (defn rr-has? [rr-type & rrs] (some #(= rr-type (.getType %)) rrs))
@@ -56,37 +66,97 @@
       (not-any? #(contains? m %) s)))
 
 ;; ## Resource Records
+
 ;; Functions for creating new instances of common resource record types.
 ;; If you aren't familiar with a particular resource record type, then I suggest you read some RFCs or wikipedia :)
 ;; It should be noted that there are many more resource record types, I've just chosen what I believe to be the most common.
 ;; More might be added later.
+
+;; Function for creating a NS resource record.
 (defn rr-ns [{:keys [zone dclass ttl the-ns] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
   (NSRecord. (to-name zone) (int dclass) (long ttl) (to-name the-ns)))
+
+;; Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.
+(defn rr-ns-with-defaults [zone the-ns]
+  (rr-ns {:zone zone :the-ns the-ns}))
+
+;; Function for creating a DS resource record.
 ;; key-tag is called footprint in the Java DNS library
 (defn rr-ds [{:keys [zone dclass ttl key-tag algorithm digest-type digest] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
   (DSRecord. (to-name zone) (int dclass) (long ttl) key-tag algorithm digest-type digest))
+
+;; Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.
+(defn rr-ds-with-defaults [zone key-tag algorithm digest-type digest]
+  (rr-ds {:zone zone :key-tag key-tag :algorithm algorithm :digest-type digest-type :digest digest}))
+
+;; Function for creating a SOA resource record.
 ;; The serial is commonly in the following format <date in yyyymmdd><run-of-the-day> <20120420><01> or 2012042001
 ;; What generally really matters is that each serial number is numerically larger than the previous ones issued.
 (defn rr-soa [{:keys [zone dclass ttl host admin serial refresh retry expire minimum] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults) refresh (:refresh soa-defaults) retry (:retry soa-defaults) expire (:expire soa-defaults) minimum (:minimum soa-defaults)}}]
   (SOARecord. (to-name zone) (int dclass) (long ttl) (to-name host) (to-name admin) (long serial) (long refresh) (long retry) (long expire) (long minimum)))
+
+;; Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.
+(defn rr-soa-with-defaults [zone host admin serial]
+  (rr-soa {:zone zone :host host :admin admin :serial serial}))
+
+;; Function for creating a TXT resource record.
 (defn rr-txt [{:keys [zone dclass ttl lines] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
   (TXTRecord. (to-name zone) (int dclass) (long ttl) (to-list lines)))
+
+;; Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.
+(defn rr-txt-with-defaults [zone lines]
+  (rr-txt {:zone zone :lines lines}))
+
+;; Function for creating a MX resource record.
 (defn rr-mx [{:keys [zone dclass ttl priority target] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}] ; todo add default priority?
   (MXRecord. (to-name zone) (int dclass) (long ttl) (int priority) (to-name target)))
+
+;; Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.
+(defn rr-mx-with-defaults [zone priority target]
+  (rr-mx {:zone zone :priority priority :target target}))
+
+;; Function for creating a CNAME resource record.
 (defn rr-cname [{:keys [zone dclass ttl alias] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
   (CNAMERecord. (to-name zone) (int dclass) (long ttl) (to-name alias)))
+
+;; Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.
+(defn rr-cname-with-defaults [zone alias]
+  (rr-cname {:zone zone :alias alias}))
+
+;; Function for creating a PTR resource record.
 (defn rr-ptr [{:keys [zone dclass ttl target] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
   (PTRRecord. (to-name zone) (int dclass) (long ttl) (to-name target)))
+
+;; Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.
+(defn rr-ptr-with-defaults [zone target]
+  (rr-ptr {:zone zone :target target}))
+
+;; Function for creating an A resource record.
 (defn rr-a [{:keys [zone dclass ttl address] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
   (ARecord. (to-name zone) (int dclass) (long ttl) (to-inet-address address)))
+
+;; Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.
+(defn rr-a-with-defaults [zone address]
+  (rr-a {:zone zone :address address}))
+
+;; Function for creating an AAAA resource record.
 (defn rr-aaaa [{:keys [zone dclass ttl address] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
   (ARecord. (to-name zone) (int dclass) (long ttl) (to-inet-address address)))
 
+;; Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.
+(defn rr-aaaa-with-defaults [zone address]
+  (rr-aaaa {:zone zone :address address}))
+
 ;; ### Dummy functions (part of the hack to create an empty zone)
+
+;; You almost certainly should not call this function.
 (defn- dummy-soa [zone-name] (rr-soa {:zone zone-name :dclass dflt-dclass :ttl dflt-ttl :host zone-name :admin zone-name :serial 0 :refresh 0 :retry 0 :expire 0 :minimum 0}))
+
+;; You almost certainly should not call this function.
 (defn- dummy-ns [zone-name] (rr-ns {:zone zone-name :dclass dflt-dclass :ttl dflt-ttl :the-ns zone-name}))
 
 ;; ## Common DNS tasks 
+
 ;; These are helpful from a REPL for example, but not generally in a program because they print results to standard out.
 
 ;; Lookup hostname(s). This prints the result to stdout, it does not return a seq of the data.
@@ -97,10 +167,12 @@
 ;; or if you have a seq of things to look up:
 ;; (apply dns-lookup ["www.google.com" "www.bing.com"])
 (defn dns-lookup [& to-lookups] (lookup/main (into-array String to-lookups)))
+
 ;; Lookup hostname(s) by resource record type. This prints the result to stdout, it does not return a seq of the data.
 ;; example:
 ;; (dns-loookup-by-type Type/PTR "www.google.com" "www.bing.com")
 (defn dns-lookup-by-type [rr-type & to-lookups] (lookup/main (into-array String (into ["-t" (Type/string rr-type)] to-lookups))))
+
 ;; todo - add function for reverse lookup
 
 ;; dig is a DNS utility that provides a great deal more detail than a simple lookup. It contains all the DNS information in the UDP packets.
@@ -130,7 +202,9 @@
   {:pre [(all-or-none the-args [:server :type :dclass])]} ; if :server is present, :class and :type must be as well (for all permutations...)
     (dig/main (into-array String (filter seq (into [the-server the-name the-type the-class] (convert-dig-options options-map))))))
 
-;; ## Ways to get a zone (generally prefer a Zone over a Master)
+;; ## Ways to get a zone 
+
+;; Generally prefer a Zone over a Master.
 
 ;; Read the zone from a file. It can be a java.io.File object or a String file path.
 ;; Example:
@@ -166,8 +240,8 @@
   (Master. zone))
 
 ;; ## Things you can do with a RRSet
-;; Generally, prefer to get a seq of resource records, but Java DNS has these RRSet objects, so we expose them as an intermediate abstraction.
 
+;; Generally, prefer to get a seq of resource records, but Java DNS has these RRSet objects, so we expose them as an intermediate abstraction.
 (defn rrs-from-rrset [rrset]
   (iterator-seq (.rrs rrset)))
 
@@ -218,6 +292,7 @@
 ;; ## Master files
 
 ;; Prefer a zone to a master file
+
 ;; todo need to introduce a protocol here to get the rrs from a master/zone?
 ;; Get the resource records from a master file. Note that this closes the master input stream. 
 (defn rrs-from-master [master]
