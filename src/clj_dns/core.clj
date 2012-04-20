@@ -149,12 +149,14 @@
 ;; DNS Java requires a SOA and at least one NS record. We'll put placeholders in there and then 
 ;; remove them, thus creating an empty zone. This allows zonelets (or fragments) to be created
 ;; and later stitched together to form a complete zone.
-(defn empty-zone
+(defn zone-fragment
   [zone-name]
   (let [placeholder-soa (dummy-soa zone-name) placeholder-ns (dummy-ns zone-name)]
     (doto (Zone. (to-name zone-name) (into-array Record [placeholder-soa placeholder-ns]))
       (.removeRecord placeholder-soa)
       (.removeRecord placeholder-ns))))
+
+(defn empty-zone [] (zone-framgment "."))
 
 ;; zone passed in can be a File or InputStream
 (defn parse-master [zone]
