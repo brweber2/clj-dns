@@ -8,8 +8,6 @@ This project can be found on github at [clj-dns](https://github.com/brweber2/clj
 
 It should be noted that not all functionality from the Java DNS library is exposed directly via the clojure API. Only the common tasks are implemented in a "Clojure friendly" way, the rest are available via Clojure's excellent Java interop.
 
-Examples to come shortly.
-
 ## Usage
 
 Leiningen
