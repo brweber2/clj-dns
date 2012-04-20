@@ -173,23 +173,30 @@
   (doseq [] (map #(.addRecord zone %) rrs)))
 
 (defn rrsets-from-zone [zone]
-  (iterator-seq (.iterator zone)))
+  (try
+    (iterator-seq (.iterator zone))
+    (catch ArrayIndexOutOfBoundsException e [])))
 
 (defn rrs-from-rrset [rrset]
   (iterator-seq (.rrs rrset)))
 
 ;; Get the resource records from a zone.
 (defn rrs-from-zone [zone]
-  (doseq [] (map rrs-from-rrset (rrsets-from-zone zone))))
+  (flatten (map rrs-from-rrset (rrsets-from-zone zone))))
 
 ;; merge resource records from b into a
 (defn rrs-into [a b]
-  (add-rrs a (rrs-from-zone b)))
+  `(~add-rrs ~a ~@(rrs-from-zone b)))
 
 ;; Merge zonelets (or fragments) into a single zone
-(defn merge-zones [zone-name & zones]
-  (let [new-zone (empty-zone zone-name)]
-    (doseq [] (map (partial rrs-into new-zone) zones))))
+(defn merge-zones [& zones]
+  (let [the-new-zone (empty-zone)]
+    (doseq [] (map (partial rrs-into the-new-zone) zones))
+    the-new-zone))
+
+  (let [the-new-zone (empty-zone)]
+    (doseq [] (map (partial rrs-into the-new-zone) [z]))
+    the-new-zone)
 
 ;; todo need to introduce a protocol here to get the rrs from a master/zone
 ;; Get the resource records from a master file. Note that this closes the master input stream.
