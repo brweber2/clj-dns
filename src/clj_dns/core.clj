@@ -94,6 +94,8 @@
 ;; (dns-lookup "www.google.com")
 ;; or with multiple values:
 ;; (dns-lookup "www.google.com" "www.bing.com")
+;; or if you have a seq of things to look up:
+;; (apply dns-lookup ["www.google.com" "www.bing.com"])
 (defn dns-lookup [& to-lookups] (lookup/main (into-array String to-lookups)))
 ;; Lookup hostname(s) by resource record type. This prints the result to stdout, it does not return a seq of the data.
 ;; example:
@@ -170,7 +172,9 @@
 
 ;; Adds all the resource records passed in to the zone
 (defn add-rrs [zone & rrs]
-  (doseq [] (map #(.addRecord zone %) rrs)))
+  (do
+    (doseq [rr rrs] (.addRecord zone rr))
+    zone))
 
 (defn rrsets-from-zone [zone]
   (try
@@ -186,12 +190,12 @@
 
 ;; merge resource records from b into a
 (defn rrs-into [a b]
-  `(~add-rrs ~a ~@(rrs-from-zone b)))
+  (apply add-rrs a (rrs-from-zone b)))
 
 ;; Merge zonelets (or fragments) into a single zone
 (defn merge-zones [& zones]
   (let [the-new-zone (empty-zone)]
-    (doseq [] (map (partial rrs-into the-new-zone) zones))
+    (doseq [z zones] (rrs-into the-new-zone z))
     the-new-zone))
 
 ;; todo need to introduce a protocol here to get the rrs from a master/zone
@@ -203,8 +207,12 @@
 
 ;; Removes all the resource records passed in from the zone
 (defn remove-rrs [zone & rrs]
-  (doseq [] (map #(.removeRecord zone %) rrs)))
+  (doseq [rr rrs] (.removeRecord zone rr)))
 
+;; This returns a seq of RRSet's from a zone.
+(defn find-rrsets [zone zone-name zone-type]
+  (seq (.answers (.findRecords zone (to-name zone-name) (int zone-type)))))
+
+;; This returns a seq of all the resource records from a zone.
 (defn find-records [zone zone-name zone-type]
-  (.findRecords zone (to-name zone-name) (int zone-type)))
-
+  (doall (map #(rrs-from-rrset %) (find-rrsets zone zone-name zone-type))))
