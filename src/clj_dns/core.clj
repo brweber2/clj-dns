@@ -16,18 +16,11 @@
   :minimum 10800  ; 3 hours
   })
 ;; TTL is time-to-live
-(def dflt-ttl 86400)
+(def dflt-ttl 86400) ; 1 day
 ;; IN is for Internet. I can almost guarantee this is what you want :)
 (def dflt-dclass DClass/IN)
 ;; Map of default values for resource record creation (making these optional parameters essentially)
 (def rr-defaults {:ttl dflt-ttl :dclass dflt-dclass})
-;; replace the keys in the rr-defaults map with symbols to make clojure map :or destructuring happy :(
-(defn map-keys-to-symbols [m]
-  (into {}
-    (for [[k v] m]
-      [(symbol (name k)) v])))
-(defn get-rr-defaults [] (map-keys-to-symbols rr-defaults))
-(defn get-soa-defaults [] (map-keys-to-symbols soa-defaults))
 
 ;; ## Helper functions (todo protocol better for the instance? cases...?)
 
@@ -67,31 +60,31 @@
 ;; If you aren't familiar with a particular resource record type, then I suggest you read some RFCs or wikipedia :)
 ;; It should be noted that there are many more resource record types, I've just chosen what I believe to be the most common.
 ;; More might be added later.
-(defn rr-ns [{:keys [zone dclass ttl the-ns] :or {ttl dflt-ttl dclass dflt-dclass}}]
+(defn rr-ns [{:keys [zone dclass ttl the-ns] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
   (NSRecord. (to-name zone) (int dclass) (long ttl) (to-name the-ns)))
 ;; key-tag is called footprint in the Java DNS library
-(defn rr-ds [{:keys [zone dclass ttl key-tag algorithm digest-type digest] :or (get-rr-defaults)}]
+(defn rr-ds [{:keys [zone dclass ttl key-tag algorithm digest-type digest] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
   (DSRecord. (to-name zone) (int dclass) (long ttl) key-tag algorithm digest-type digest))
 ;; The serial is commonly in the following format <date in yyyymmdd><run-of-the-day> <20120420><01> or 2012042001
 ;; What generally really matters is that each serial number is numerically larger than the previous ones issued.
-(defn rr-soa [{:keys [zone dclass ttl host admin serial refresh retry expire minimum] :or (merge (get-rr-defaults) (get-soa-defaults))}]
+(defn rr-soa [{:keys [zone dclass ttl host admin serial refresh retry expire minimum] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults) refresh (:refresh soa-defaults) retry (:retry soa-defaults) expire (:expire soa-defaults) minimum (:minimum soa-defaults)}}]
   (SOARecord. (to-name zone) (int dclass) (long ttl) (to-name host) (to-name admin) (long serial) (long refresh) (long retry) (long expire) (long minimum)))
-(defn rr-txt [{:keys [zone dclass ttl lines] :or (get-rr-defaults)}]
+(defn rr-txt [{:keys [zone dclass ttl lines] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
   (TXTRecord. (to-name zone) (int dclass) (long ttl) (to-list lines)))
-(defn rr-mx [{:keys [zone dclass ttl priority target] :or (get-rr-defaults)}] ; todo add default priority?
+(defn rr-mx [{:keys [zone dclass ttl priority target] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}] ; todo add default priority?
   (MXRecord. (to-name zone) (int dclass) (long ttl) (int priority) (to-name target)))
-(defn rr-cname [{:keys [zone dclass ttl alias] :or (get-rr-defaults)}]
+(defn rr-cname [{:keys [zone dclass ttl alias] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
   (CNAMERecord. (to-name zone) (int dclass) (long ttl) (to-name alias)))
-(defn rr-ptr [{:keys [zone dclass ttl target] :or (get-rr-defaults)}]
+(defn rr-ptr [{:keys [zone dclass ttl target] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
   (PTRRecord. (to-name zone) (int dclass) (long ttl) (to-name target)))
-(defn rr-a [{:keys [zone dclass ttl address] :or (get-rr-defaults)}]
+(defn rr-a [{:keys [zone dclass ttl address] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
   (ARecord. (to-name zone) (int dclass) (long ttl) (to-inet-address address)))
-(defn rr-aaaa [{:keys [zone dclass ttl address] :or (get-rr-defaults)}]
+(defn rr-aaaa [{:keys [zone dclass ttl address] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
   (ARecord. (to-name zone) (int dclass) (long ttl) (to-inet-address address)))
 
 ;; ### Dummy functions (part of the hack to create an empty zone)
 (defn- dummy-soa [zone-name] (rr-soa {:zone zone-name :dclass dflt-dclass :ttl dflt-ttl :host zone-name :admin zone-name :serial 0 :refresh 0 :retry 0 :expire 0 :minimum 0}))
-(defn- dummy-ns [zone-name] (rr-ns {:zone zone-name :dclass dflt-dclass :ttl dflt-ttl :ns zone-name}))
+(defn- dummy-ns [zone-name] (rr-ns {:zone zone-name :dclass dflt-dclass :ttl dflt-ttl :the-ns zone-name}))
 
 ;; ## Common DNS tasks 
 ;; These are helpful from a REPL for example, but not generally in a program because they print results to standard out.
@@ -107,7 +100,6 @@
 ;; (dns-loookup-by-type Type/PTR "www.google.com" "www.bing.com")
 (defn dns-lookup-by-type [rr-type & to-lookups] (lookup/main (into-array String (into ["-t" (Type/string rr-type)] to-lookups))))
 ;; todo - add function for reverse lookup
-
 
 ;; dig is a DNS utility that provides a great deal more detail than a simple lookup. It contains all the DNS information in the UDP packets.
 ;; dig's options look something like:
@@ -160,9 +152,9 @@
 (defn empty-zone
   [zone-name]
   (let [placeholder-soa (dummy-soa zone-name) placeholder-ns (dummy-ns zone-name)]
-  (doto (Zone. (to-name zone-name) (into-array Record [placeholder-soa placeholder-ns]))
-    (.removeRecord placeholder-soa)
-    (.removeRecord placeholder-ns))))
+    (doto (Zone. (to-name zone-name) (into-array Record [placeholder-soa placeholder-ns]))
+      (.removeRecord placeholder-soa)
+      (.removeRecord placeholder-ns))))
 
 ;; zone passed in can be a File or InputStream
 (defn parse-master [zone]
@@ -187,8 +179,8 @@
   (add-rrs a (rrs-from-zone b)))
 
 ;; Merge zonelets (or fragments) into a single zone
-(defn merge-zones [& zones]
-  (let [new-zone (empty-zone)]
+(defn merge-zones [zone-name & zones]
+  (let [new-zone (empty-zone zone-name)]
     (doseq [] (map (partial rrs-into new-zone) zones))))
 
 ;; todo need to introduce a protocol here to get the rrs from a master/zone
