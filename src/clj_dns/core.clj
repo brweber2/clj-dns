@@ -194,10 +194,6 @@
     (doseq [] (map (partial rrs-into the-new-zone) zones))
     the-new-zone))
 
-  (let [the-new-zone (empty-zone)]
-    (doseq [] (map (partial rrs-into the-new-zone) [z]))
-    the-new-zone)
-
 ;; todo need to introduce a protocol here to get the rrs from a master/zone
 ;; Get the resource records from a master file. Note that this closes the master input stream.
 (defn rrs-from-master [master]
