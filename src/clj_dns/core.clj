@@ -296,7 +296,7 @@
 (defn rrs-from-rrset [rrset]
   (iterator-seq (.rrs rrset)))
 
-;; ## Things you can do with a zone
+;; ## Things you can do with a Zone
 
 ;; Print the zone as a string
 (defn zone-to-str [zone]

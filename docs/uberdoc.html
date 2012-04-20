@@ -3249,7 +3249,7 @@ and later stitched together to form a complete zone.</p>
   (Master. zone))</pre></td></tr><tr><td class="docs"><h2>Things you can do with an RRSet</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Generally, prefer to get a seq of resource records, but Java DNS has these RRSet objects, so we expose them as an intermediate abstraction.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn rrs-from-rrset [rrset]
-  (iterator-seq (.rrs rrset)))</pre></td></tr><tr><td class="docs"><h2>Things you can do with a zone</h2>
+  (iterator-seq (.rrs rrset)))</pre></td></tr><tr><td class="docs"><h2>Things you can do with a Zone</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Print the zone as a string</p>
 </td><td class="codes"><pre class="brush: clojure">(defn zone-to-str [zone]
   (.toMasterFile zone))</pre></td></tr><tr><td class="docs"><p>Adds all the resource records passed in to the zone</p>
