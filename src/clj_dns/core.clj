@@ -1,5 +1,5 @@
 (ns clj-dns.core
-  (:import (org.xbill.DNS Name Zone Record Type Master DClass Address Message SimpleResolver SOARecord NSRecord DSRecord CNAMERecord TXTRecord ARecord AAAARecord MXRecord PTRRecord Lookup ReverseMap))
+  (:import (org.xbill.DNS Name Zone Record Type Master DClass Address Message SimpleResolver SOARecord NSRecord DSRecord CNAMERecord TXTRecord ARecord AAAARecord MXRecord PTRRecord Lookup ReverseMap RRset))
   (:import (org.xbill.DNS.spi DNSJavaNameServiceDescriptor))
   (:import lookup)
   (:import dig)
@@ -14,14 +14,6 @@
 ;; ## Default values 
 ;; (used for creating resource records)
 
-;; special defaults for SOA records
-(def soa-defaults {
-  :refresh   1800  ; 30 minutes
-  :retry      900  ; 15 minutes
-  :expire  691200  ; 1 week 1 day
-  :minimum  10800  ; 3 hours
-  })
-
 ;; TTL is time-to-live
 (def dflt-ttl 86400) ; 1 day
 
@@ -30,6 +22,14 @@
 
 ;; Map of default values for resource record creation (making these optional parameters essentially)
 (def rr-defaults {:ttl dflt-ttl :dclass dflt-dclass})
+
+;; special defaults for SOA records
+(def soa-defaults {
+  :refresh   1800  ; 30 minutes
+  :retry      900  ; 15 minutes
+  :expire  691200  ; 1 week 1 day
+  :minimum  10800  ; 3 hours
+  })
 
 ;; ## Helper functions 
 ;; (todo protocol better for the 'instance?' cases...?)
@@ -62,8 +62,8 @@
 
 ;; converts a map of options for dig to a seq of strings
 ;; <pre><code>
-;; e.g. {:tcp true} will return '("-t")
-;; and {:ignore-trunction true :print-query true} will return '("-i" "-p")
+;; e.g. {:tcp true} will return ["-t"]
+;; and {:ignore-trunction true :print-query true} will return ["-i","-p"]
 ;; </code></pre>
 (defn- convert-dig-options [options-map]
   (filter seq [(when (:tcp options-map) "-t") (when (:ignore-trunction options-map) "-i") (when (:print-query options-map) "-p")]))
@@ -73,13 +73,13 @@
   (or (every? #(contains? m %) s)
       (not-any? #(contains? m %) s)))
 
-;; Returns 4 for IPv4, 6 for IPv6 and error otherwise. to-lookup should be a string ip address.
-(defn- get-family [to-lookup]
-  (Address/familyOf (Address/getByAddress to-lookup)))
+;; Returns (int 4) for IPv4, (int 6) for IPv6 and error otherwise.
+(defn- get-family [^String ip-address]
+  (Address/familyOf (Address/getByAddress ip-address)))
 
 ;; Takes a string ip address and converts it to a byte[]
-(defn ip-address-to-byte-array [to-lookup]
-  (Address/toByteArray to-lookup (get-family to-lookup)))
+(defn ip-address-to-byte-array [^String ip-address]
+  (Address/toByteArray ip-address (get-family ip-address)))
 
 ;; Takes and IP address and returns the reverse zone.
 ;; 
@@ -94,6 +94,10 @@
 ;; 3721:abcd:: -> 0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.d.c.b.a.1.2.7.3.ip6.arpa.
 ;; </code></pre>
 ;; Again note the trailing period and remember that the reverse zone is 'ip6' and not 'ipv6'.
+;; 
+;; Finally, this function has no support for CIDR blocks. It only works with full ip addresses.
+;;
+;; This should actually work for numerous types: String, InetAddress, int[] and byte[]
 (defn ip-to-reverse-str [ip-addr]
   (ReverseMap/fromAddress ip-addr))
 
@@ -138,60 +142,53 @@
 ;; &lt;date in yyyymmdd&gt;&lt;run-of-the-day&gt; &lt;20120420&gt;&lt;01&gt; or 2012042001
 ;; </code></pre>
 ;; What generally really matters is that each serial number is numerically larger than the previous ones issued.
-(defn rr-soa [{:keys [zone dclass ttl host admin serial refresh retry expire minimum] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults) refresh (:refresh soa-defaults) retry (:retry soa-defaults) expire (:expire soa-defaults) minimum (:minimum soa-defaults)}}]
-  (SOARecord. (to-name zone) (int dclass) (long ttl) (to-name host) (to-name admin) (long serial) (long refresh) (long retry) (long expire) (long minimum)))
-
-;; Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.
-(defn rr-soa-with-defaults [zone host admin serial]
-  (rr-soa {:zone zone :host host :admin admin :serial serial}))
+(defn rr-soa
+  ([{:keys [zone dclass ttl host admin serial refresh retry expire minimum] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults) refresh (:refresh soa-defaults) retry (:retry soa-defaults) expire (:expire soa-defaults) minimum (:minimum soa-defaults)}}]
+    (SOARecord. (to-name zone) (int dclass) (long ttl) (to-name host) (to-name admin) (long serial) (long refresh) (long retry) (long expire) (long minimum)))
+  ([zone host admin serial]
+      (rr-soa {:zone zone :host host :admin admin :serial serial})))
 
 ;; Function for creating a TXT resource record.
-(defn rr-txt [{:keys [zone dclass ttl lines] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
-  (TXTRecord. (to-name zone) (int dclass) (long ttl) (to-list lines)))
-
-;; Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.
-(defn rr-txt-with-defaults [zone lines]
-  (rr-txt {:zone zone :lines lines}))
+(defn rr-txt
+  ([{:keys [zone dclass ttl lines] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
+    (TXTRecord. (to-name zone) (int dclass) (long ttl) (to-list lines)))
+  ([zone lines]
+    (rr-txt {:zone zone :lines lines})))
 
 ;; Function for creating a MX resource record.
-(defn rr-mx [{:keys [zone dclass ttl priority target] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}] ; todo add default priority?
-  (MXRecord. (to-name zone) (int dclass) (long ttl) (int priority) (to-name target)))
-
-;; Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.
-(defn rr-mx-with-defaults [zone priority target]
-  (rr-mx {:zone zone :priority priority :target target}))
+(defn rr-mx
+  ([{:keys [zone dclass ttl priority target] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}] ; todo add default priority?
+    (MXRecord. (to-name zone) (int dclass) (long ttl) (int priority) (to-name target)))
+  ([zone priority target]
+      (rr-mx {:zone zone :priority priority :target target})))
 
 ;; Function for creating a CNAME resource record.
-(defn rr-cname [{:keys [zone dclass ttl alias] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
-  (CNAMERecord. (to-name zone) (int dclass) (long ttl) (to-name alias)))
-
-;; Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.
-(defn rr-cname-with-defaults [zone alias]
-  (rr-cname {:zone zone :alias alias}))
+(defn rr-cname
+  ([{:keys [zone dclass ttl alias] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
+    (CNAMERecord. (to-name zone) (int dclass) (long ttl) (to-name alias)))
+  ([zone alias]
+      (rr-cname {:zone zone :alias alias})))
 
 ;; Function for creating a PTR resource record.
-(defn rr-ptr [{:keys [zone dclass ttl target] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
-  (PTRRecord. (to-name zone) (int dclass) (long ttl) (to-name target)))
-
-;; Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.
-(defn rr-ptr-with-defaults [zone target]
-  (rr-ptr {:zone zone :target target}))
+(defn rr-ptr
+  ([{:keys [zone dclass ttl target] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
+    (PTRRecord. (to-name zone) (int dclass) (long ttl) (to-name target)))
+  ([zone target]
+      (rr-ptr {:zone zone :target target})))
 
 ;; Function for creating an A resource record.
-(defn rr-a [{:keys [zone dclass ttl address] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
-  (ARecord. (to-name zone) (int dclass) (long ttl) (to-inet-address address)))
-
-;; Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.
-(defn rr-a-with-defaults [zone address]
-  (rr-a {:zone zone :address address}))
+(defn rr-a
+  ([{:keys [zone dclass ttl address] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
+    (ARecord. (to-name zone) (int dclass) (long ttl) (to-inet-address address)))
+  ([zone address]
+      (rr-a {:zone zone :address address})))
 
 ;; Function for creating an AAAA resource record.
-(defn rr-aaaa [{:keys [zone dclass ttl address] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
-  (ARecord. (to-name zone) (int dclass) (long ttl) (to-inet-address address)))
-
-;; Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.
-(defn rr-aaaa-with-defaults [zone address]
-  (rr-aaaa {:zone zone :address address}))
+(defn rr-aaaa
+  ([{:keys [zone dclass ttl address] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
+    (ARecord. (to-name zone) (int dclass) (long ttl) (to-inet-address address)))
+  ([zone address]
+      (rr-aaaa {:zone zone :address address})))
 
 ;; ### Dummy functions 
 ;; (part of the hack to create an empty zone)
@@ -205,8 +202,6 @@
   (rr-ns {:zone zone-name :dclass dflt-dclass :ttl dflt-ttl :the-ns zone-name}))
 
 ;; ## Common DNS tasks 
-
-;; These are helpful from a REPL for example, but not generally in a program because they print results to standard out.
 
 ;; Lookup hostname(s). This prints the result to stdout, it does not return a seq of the data.
 ;;
@@ -222,7 +217,7 @@
 ;; <pre><code>
 ;; (apply dns-lookup ["www.google.com" "www.bing.com"])
 ;; </code></pre>
-(defn dns-lookup [& to-lookups] (lookup/main (into-array String to-lookups)))
+(defn dns-lookup-to-stdout [& to-lookups] (lookup/main (into-array String to-lookups)))
 
 ;; Lookup hostname(s) by resource record type. This prints the result to stdout, it does not return a seq of the data.
 ;;
@@ -230,23 +225,24 @@
 ;; <pre><code>
 ;; (dns-loookup-by-type Type/PTR "www.google.com" "www.bing.com")
 ;; </code></pre>
-(defn dns-lookup-by-type [rr-type & to-lookups] (lookup/main (into-array String (into ["-t" (Type/string rr-type)] to-lookups))))
+(defn dns-lookup-by-type-to-stdout [rr-type & to-lookups] (lookup/main (into-array String (into ["-t" (Type/string rr-type)] to-lookups))))
 
 ;; Returns a map with two keys (aliases and answers). Each maps to a sequence.
-(defn lookup-dns [{:keys [to-lookup rr-type] :or {rr-type Type/A}}]
-  (let [lkup (Lookup. (to-name to-lookup) (int rr-type))]
-    (.run lkup)
-    { :aliases (seq (.getAliases lkup))
-      :answers (if (= (.getResult lkup) Lookup/SUCCESSFUL)
-                 (seq (.getAnswers lkup))
-                 [])}))
+(defn dns-lookup
+  ([{:keys [to-lookup rr-type] :or {rr-type Type/A}}]
+    (let [lkup (Lookup. (to-name to-lookup) (int rr-type))]
+      (.run lkup)
+      { :aliases (seq (.getAliases lkup))
+        :answers (if (= (.getResult lkup) Lookup/SUCCESSFUL)
+                   (seq (.getAnswers lkup))
+                   [])}))
+  ([to-lookup rr-type] (dns-lookup {:to-lookup to-lookup :rr-type rr-type})))
 
-;; Needs a better name :(
-(defn lookup-dns-with-defaults [to-lookup] (lookup-dns {:to-lookup to-lookup}))
+;; Returns the hostname when passed an ip-address (a reverse DNS lookup).
+(defn reverse-dns-lookup [^String ip-address]
+  (.getHostByAddr (.createNameService (DNSJavaNameServiceDescriptor.)) (ip-address-to-byte-array ip-address)))
 
-(defn reverse-dns-lookup [to-lookup]
-  (.getHostByAddr (.createNameService (DNSJavaNameServiceDescriptor.)) (ip-address-to-byte-array to-lookup)))
-
+;; Executes a DNS query by passing in a resource record to use as the query. You can optionally provide a resolver.
 (defn dns-query
   ([rr]
     (.send (SimpleResolver.) (Message/newQuery rr)))
@@ -278,7 +274,7 @@
 ;;
 ;; example
 ;;
-;; (dns-dig {:tcp true :ignore-trunction true :print-query true})
+;; (dns-dig-to-stdout {:tcp true :ignore-trunction true :print-query true})
 ;;
 ;; and options I decided not to support
 ;; <pre><code>
@@ -286,7 +282,7 @@
 ;; -e &lt;edns&gt; -- not supported here
 ;; -d &lt;edns&gt; -- not supported here
 ;; </code></pre>
-(defn dns-dig
+(defn dns-dig-to-stdout
   [{the-server :server the-name :name the-type :type options-map :options the-class :dclass :as the-args :or {:dclass DClass/IN}}]
   {:pre [(all-or-none the-args [:server :type :dclass])]} ; if :server is present, :class and :type must be as well (for all permutations...)
     (dig/main (into-array String (filter seq (into [the-server the-name the-type the-class] (convert-dig-options options-map))))))
@@ -337,7 +333,7 @@
 ;; ## Things you can do with an RRSet
 
 ;; Generally, prefer to get a seq of resource records, but Java DNS has these RRSet objects, so we expose them as an intermediate abstraction.
-(defn rrs-from-rrset [rrset]
+(defn rrs-from-rrset [^RRset rrset]
   (iterator-seq (.rrs rrset)))
 
 ;; ## Things you can do with a Zone
@@ -386,11 +382,10 @@
 
 ;; ## Master files
 
-;; Prefer a zone to a master file
-
-;; todo need to introduce a protocol here to get the rrs from a master/zone?
+;; todo should I to introduce a protocol here to get the rrs from a master/zone?
 ;;
 ;; Get the resource records from a master file. Note that this closes the master input stream, which makes this a one shot object.
+;; Unless if you really need this, I recommend using a Zone.
 (defn rrs-from-master [master]
   (let [v (.nextRecord master)]
     (when-not (nil? v)
