@@ -60,6 +60,12 @@
 ;; The rr-type is an int, but there are constants for the values on org.xbill.DNS.Type (e.g. Type/NS)
 (defn has-rr-of-type? [rr-type & rrs] (some #(= rr-type (.getType %)) rrs))
 
+;; Gets the human readable form of the RR type
+(defn rr-type [rr] (Type/string (.getType rr)))
+
+;; Gets the resource record name as a String
+(defn rr-name [rr] (str (.getName rr)))
+
 ;; converts a map of options for dig to a seq of strings
 ;; <pre><code>
 ;; e.g. {:tcp true} will return ["-t"]
@@ -88,6 +94,9 @@
 ;; Takes a string ip address and converts it to a byte[]
 (defn ip-address-to-byte-array [^String ip-address]
   (Address/toByteArray ip-address (get-family ip-address)))
+
+;; Takes either a string or byte[] and returns a byte[]
+(defn to-byte-array [s] (if (string? s) (.getBytes s) s))
 
 ;; Takes and IP address and returns the reverse zone.
 ;; 
@@ -139,7 +148,7 @@
 ;; key-tag is called footprint in the Java DNS library
 (defn rr-ds
   ([{:keys [zone dclass ttl key-tag algorithm digest-type digest] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
-    (DSRecord. (to-name zone) (int dclass) (long ttl) key-tag algorithm digest-type digest))
+    (DSRecord. (to-name zone) (int dclass) (long ttl) (int key-tag) (int algorithm) (int digest-type) (to-byte-array digest)))
   ([zone key-tag algorithm digest-type digest]
     (rr-ds {:zone zone :key-tag key-tag :algorithm algorithm :digest-type digest-type :digest digest})))
 
@@ -401,7 +410,7 @@
   (seq (.answers (.findRecords zone (to-name zone-name) (int zone-type)))))
 
 ;; This returns a seq of all the resource records from a zone.
-(defn find-records [zone zone-name zone-type]
+(defn find-rrs [zone zone-name zone-type]
   (doall (map #(rrs-from-rrset %) (find-rrsets zone zone-name zone-type))))
 
 ;; ## Master files

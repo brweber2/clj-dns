@@ -3028,7 +3028,7 @@ net.brehaut.ClojureTools = (function (SH) {
     build_tree: build_tree
   };
 })(SyntaxHighlighter);
-</script><title>com.brweber2/clj-dns -- Marginalia</title></head><body><table><tr><td class="docs"><div class="header"><h1 class="project-name">com.brweber2/clj-dns</h1><h2 class="project-version">0.0.1</h2><br /><p>Clojure wrapper library for <a href="http://www.xbill.org/dnsjava">dnsjava</a>. Project at <a href="http://github.com/brweber2/clj-dns">clj-dns on github</a></p>
+</script><title>com.brweber2/clj-dns -- Marginalia</title></head><body><table><tr><td class="docs"><div class="header"><h1 class="project-name">com.brweber2/clj-dns</h1><h2 class="project-version">0.0.2</h2><br /><p>Clojure wrapper library for <a href="http://www.xbill.org/dnsjava">dnsjava</a>. Project at <a href="http://github.com/brweber2/clj-dns">clj-dns on github</a></p>
 </div><div class="dependencies"><h3>dependencies</h3><table><tr><td class="dep-name">org.clojure/clojure</td><td class="dotted"><hr /></td><td class="dep-version">1.3.0</td></tr><tr><td class="dep-name">dnsjava/dnsjava</td><td class="dotted"><hr /></td><td class="dep-version">2.1.1</td></tr></table></div><div class="dependencies"><h3>dev dependencies</h3><table><tr><td class="dep-name">lein-marginalia</td><td class="dotted"><hr /></td><td class="dep-version">0.7.0</td></tr></table></div></td><td class="codes" style="text-align: center; vertical-align: middle;color: #666;padding-right:20px"><br /><br /><br />(this space intentionally left almost blank)</td></tr><tr><td class="docs"><div class="toc"><a name="toc"><h3>namespaces</h3></a><ul><li><a href="#clj-dns.core">clj-dns.core</a></li></ul></div></td><td class="codes">&nbsp;</td></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#clj-dns.core" name="clj-dns.core"><h1 class="project-name">clj-dns.core</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(ns clj-dns.core
   (:import (org.xbill.DNS Name Zone Record Type Master DClass Address Message SimpleResolver SOARecord NSRecord DSRecord CNAMERecord TXTRecord ARecord AAAARecord MXRecord PTRRecord Lookup ReverseMap RRset))
@@ -3064,7 +3064,9 @@ is this necessary???</p>
 </td><td class="codes"><pre class="brush: clojure">(defn sub-domain? [a b] (.subdomain (to-name a) (to-name b)))</pre></td></tr><tr><td class="docs"><p>Predicate that checks if any resource record in the rrs seq has the provided resource record type.</p>
 
 <p>The rr-type is an int, but there are constants for the values on org.xbill.DNS.Type (e.g. Type/NS)</p>
-</td><td class="codes"><pre class="brush: clojure">(defn has-rr-of-type? [rr-type &amp; rrs] (some #(= rr-type (.getType %)) rrs))</pre></td></tr><tr><td class="docs"><p>converts a map of options for dig to a seq of strings</p>
+</td><td class="codes"><pre class="brush: clojure">(defn has-rr-of-type? [rr-type &amp; rrs] (some #(= rr-type (.getType %)) rrs))</pre></td></tr><tr><td class="docs"><p>Gets the human readable form of the RR type</p>
+</td><td class="codes"><pre class="brush: clojure">(defn rr-type [rr] (Type/string (.getType rr)))</pre></td></tr><tr><td class="docs"><p>Gets the resource record name as a String</p>
+</td><td class="codes"><pre class="brush: clojure">(defn rr-name [rr] (str (.getName rr)))</pre></td></tr><tr><td class="docs"><p>converts a map of options for dig to a seq of strings</p>
 
 <pre><code>
 e.g. {:tcp true} will return ["-t"]
@@ -3082,7 +3084,8 @@ and {:ignore-trunction true :print-query true} will return ["-i","-p"]
 </td><td class="codes"><pre class="brush: clojure">(defn- get-family [^String ip-address]
   (Address/familyOf (Address/getByAddress ip-address)))</pre></td></tr><tr><td class="docs"><p>Takes a string ip address and converts it to a byte[]</p>
 </td><td class="codes"><pre class="brush: clojure">(defn ip-address-to-byte-array [^String ip-address]
-  (Address/toByteArray ip-address (get-family ip-address)))</pre></td></tr><tr><td class="docs"><p>Takes and IP address and returns the reverse zone.</p>
+  (Address/toByteArray ip-address (get-family ip-address)))</pre></td></tr><tr><td class="docs"><p>Takes either a string or byte[] and returns a byte[]</p>
+</td><td class="codes"><pre class="brush: clojure">(defn to-byte-array [s] (if (string? s) (.getBytes s) s))</pre></td></tr><tr><td class="docs"><p>Takes and IP address and returns the reverse zone.</p>
 
 <p>IPv4 Example:</p>
 
@@ -3134,7 +3137,7 @@ More might be added later.</p>
 <p>key-tag is called footprint in the Java DNS library</p>
 </td><td class="codes"><pre class="brush: clojure">(defn rr-ds
   ([{:keys [zone dclass ttl key-tag algorithm digest-type digest] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
-    (DSRecord. (to-name zone) (int dclass) (long ttl) key-tag algorithm digest-type digest))
+    (DSRecord. (to-name zone) (int dclass) (long ttl) (int key-tag) (int algorithm) (int digest-type) (to-byte-array digest)))
   ([zone key-tag algorithm digest-type digest]
     (rr-ds {:zone zone :key-tag key-tag :algorithm algorithm :digest-type digest-type :digest digest})))</pre></td></tr><tr><td class="docs"><p>Function for creating a SOA resource record.</p>
 
@@ -3345,7 +3348,7 @@ and later stitched together to form a complete zone.</p>
   (doseq [rr rrs] (.removeRecord zone rr)))</pre></td></tr><tr><td class="docs"><p>This returns a seq of RRSet's from a zone.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn find-rrsets [zone zone-name zone-type]
   (seq (.answers (.findRecords zone (to-name zone-name) (int zone-type)))))</pre></td></tr><tr><td class="docs"><p>This returns a seq of all the resource records from a zone.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn find-records [zone zone-name zone-type]
+</td><td class="codes"><pre class="brush: clojure">(defn find-rrs [zone zone-name zone-type]
   (doall (map #(rrs-from-rrset %) (find-rrsets zone zone-name zone-type))))</pre></td></tr><tr><td class="docs"><h2>Master files</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>todo should I to introduce a protocol here to get the rrs from a master/zone?</p>
 
