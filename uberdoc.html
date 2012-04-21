@@ -3031,26 +3031,29 @@ net.brehaut.ClojureTools = (function (SH) {
 </script><title>com.brweber2/clj-dns -- Marginalia</title></head><body><table><tr><td class="docs"><div class="header"><h1 class="project-name">com.brweber2/clj-dns</h1><h2 class="project-version">0.0.1-SNAPSHOT</h2><br /><p>Clojure wrapper library for <a href="http://www.xbill.org/dnsjava">dnsjava</a>. Project at <a href="http://github.com/brweber2/clj-dns">clj-dns on github</a></p>
 </div><div class="dependencies"><h3>dependencies</h3><table><tr><td class="dep-name">org.clojure/clojure</td><td class="dotted"><hr /></td><td class="dep-version">1.3.0</td></tr><tr><td class="dep-name">dnsjava/dnsjava</td><td class="dotted"><hr /></td><td class="dep-version">2.1.1</td></tr></table></div><div class="dependencies"><h3>dev dependencies</h3><table><tr><td class="dep-name">lein-marginalia</td><td class="dotted"><hr /></td><td class="dep-version">0.7.0</td></tr></table></div></td><td class="codes" style="text-align: center; vertical-align: middle;color: #666;padding-right:20px"><br /><br /><br />(this space intentionally left almost blank)</td></tr><tr><td class="docs"><div class="toc"><a name="toc"><h3>namespaces</h3></a><ul><li><a href="#clj-dns.core">clj-dns.core</a></li></ul></div></td><td class="codes">&nbsp;</td></tr><tr><td class="docs"><div class="docs-header"><a class="anchor" href="#clj-dns.core" name="clj-dns.core"><h1 class="project-name">clj-dns.core</h1><a class="toc-link" href="#toc">toc</a></a></div></td><td class="codes" /></tr><tr><td class="docs">
 </td><td class="codes"><pre class="brush: clojure">(ns clj-dns.core
-  (:import (org.xbill.DNS Name Zone Record Type Master DClass Address SOARecord NSRecord DSRecord CNAMERecord TXTRecord ARecord AAAARecord MXRecord PTRRecord))
+  (:import (org.xbill.DNS Name Zone Record Type Master DClass Address Message SimpleResolver SOARecord NSRecord DSRecord CNAMERecord TXTRecord ARecord AAAARecord MXRecord PTRRecord Lookup ReverseMap RRset))
+  (:import (org.xbill.DNS.spi DNSJavaNameServiceDescriptor))
   (:import lookup)
   (:import dig)
   (:import java.io.File)
   (:import java.util.List)
-  (:import clojure.lang.ISeq))</pre></td></tr><tr><td class="docs"><h2>Default values</h2>
+  (:import clojure.lang.ISeq))</pre></td></tr><tr><td class="docs"><p>The dnsjava service provider, used for reverse DNS lookup.
+is this necessary???</p>
+</td><td class="codes"><pre class="brush: clojure">(System/setProperty &quot;sun.net.spi.nameservice.provider.1&quot; &quot;dns,dnsjava&quot;)</pre></td></tr><tr><td class="docs"><h2>Default values</h2>
 
 <p>(used for creating resource records)</p>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>special defaults for SOA records</p>
-</td><td class="codes"><pre class="brush: clojure">(def soa-defaults {
-  :refresh 1800   ; 30 minutes
-  :retry 900      ; 15 minutes
-  :expire 691200  ; 1 week 1 day
-  :minimum 10800  ; 3 hours
-  })</pre></td></tr><tr><td class="docs"><p>TTL is time-to-live</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>TTL is time-to-live</p>
 </td><td class="codes"><pre class="brush: clojure">(def dflt-ttl 86400) ; 1 day</pre></td></tr><tr><td class="docs"><p>IN is for Internet. I can almost guarantee this is what you want :)</p>
 </td><td class="codes"><pre class="brush: clojure">(def dflt-dclass DClass/IN)</pre></td></tr><tr><td class="docs"><p>Map of default values for resource record creation (making these optional parameters essentially)</p>
-</td><td class="codes"><pre class="brush: clojure">(def rr-defaults {:ttl dflt-ttl :dclass dflt-dclass})</pre></td></tr><tr><td class="docs"><h2>Helper functions</h2>
+</td><td class="codes"><pre class="brush: clojure">(def rr-defaults {:ttl dflt-ttl :dclass dflt-dclass})</pre></td></tr><tr><td class="docs"><p>special defaults for SOA records</p>
+</td><td class="codes"><pre class="brush: clojure">(def soa-defaults {
+  :refresh   1800  ; 30 minutes
+  :retry      900  ; 15 minutes
+  :expire  691200  ; 1 week 1 day
+  :minimum  10800  ; 3 hours
+  })</pre></td></tr><tr><td class="docs"><h2>Helper functions</h2>
 
-<p>(todo protocol better for the instance? cases...?)</p>
+<p>(todo protocol better for the 'instance?' cases...?)</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Convert a string, keyword or symbol to a java.net.InetAddress</p>
 </td><td class="codes"><pre class="brush: clojure">(defn to-inet-address [a] (Address/getByName (name a)))</pre></td></tr><tr><td class="docs"><p>Convert a single element, clojure.lang.ISeq or java.util.List to a java.util.List</p>
 </td><td class="codes"><pre class="brush: clojure">(defn to-list [x] (condp instance? x String (apply list (flatten [x])) List x ISeq (apply list x)))</pre></td></tr><tr><td class="docs"><p>Convert a File to its aboslute path, otherwise assume the string value is a path</p>
@@ -3061,28 +3064,50 @@ net.brehaut.ClojureTools = (function (SH) {
 </td><td class="codes"><pre class="brush: clojure">(defn sub-domain? [a b] (.subdomain (to-name a) (to-name b)))</pre></td></tr><tr><td class="docs"><p>Predicate that checks if any resource record in the rrs seq has the provided resource record type.</p>
 
 <p>The rr-type is an int, but there are constants for the values on org.xbill.DNS.Type (e.g. Type/NS)</p>
-</td><td class="codes"><pre class="brush: clojure">(defn rr-has? [rr-type &amp; rrs] (some #(= rr-type (.getType %)) rrs))</pre></td></tr><tr><td class="docs"><p>converts a map of options for dig to a seq of strings</p>
+</td><td class="codes"><pre class="brush: clojure">(defn has-rr-of-type? [rr-type &amp; rrs] (some #(= rr-type (.getType %)) rrs))</pre></td></tr><tr><td class="docs"><p>converts a map of options for dig to a seq of strings</p>
 
 <pre><code>
-e.g. {:tcp true} will return '("-t")
-and {:ignore-trunction true :print-query true} will return '("-i" "-p")
+e.g. {:tcp true} will return ["-t"]
+and {:ignore-trunction true :print-query true} will return ["-i","-p"]
 </code></pre>
-</td><td class="codes"><pre class="brush: clojure">(defn- convert-dig-options
-  [options-map]
+</td><td class="codes"><pre class="brush: clojure">(defn- convert-dig-options [options-map]
   (filter seq [(when (:tcp options-map) &quot;-t&quot;) (when (:ignore-trunction options-map) &quot;-i&quot;) (when (:print-query options-map) &quot;-p&quot;)]))</pre></td></tr><tr><td class="docs"><p>given a map and a sequence of keys, it verifies that either all the keys from the sequence are present in the map or none of them are.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn- all-or-none
-  [m s] ; map m must contain each keyword from s or none of them
+</td><td class="codes"><pre class="brush: clojure">(defn- all-or-none [m s]
   (or (every? #(contains? m %) s)
-      (not-any? #(contains? m %) s)))</pre></td></tr><tr><td class="docs"><h2>Resource Records</h2>
+      (not-any? #(contains? m %) s)))</pre></td></tr><tr><td class="docs"><p>Returns (int 4) for IPv4, (int 6) for IPv6 and error otherwise.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- get-family [^String ip-address]
+  (Address/familyOf (Address/getByAddress ip-address)))</pre></td></tr><tr><td class="docs"><p>Takes a string ip address and converts it to a byte[]</p>
+</td><td class="codes"><pre class="brush: clojure">(defn ip-address-to-byte-array [^String ip-address]
+  (Address/toByteArray ip-address (get-family ip-address)))</pre></td></tr><tr><td class="docs"><p>Takes and IP address and returns the reverse zone.</p>
+
+<p>IPv4 Example:</p>
+
+<pre><code>
+118.193.14.61 -> 61.14.193.118.in-addr.arpa.
+</code></pre>
+
+<p>So basically, reverse the octects and append '.in-addr.arpa.' Please note the trailing period.</p>
+
+<p>IPv6 Example</p>
+
+<pre><code>
+3721:abcd:: -> 0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.d.c.b.a.1.2.7.3.ip6.arpa.
+</code></pre>
+
+<p>Again note the trailing period and remember that the reverse zone is 'ip6' and not 'ipv6'.</p>
+
+<p>Finally, this function has no support for CIDR blocks. It only works with full ip addresses.</p>
+
+<p>This should actually work for numerous types: String, InetAddress, int[] and byte[]</p>
+</td><td class="codes"><pre class="brush: clojure">(defn ip-to-reverse-str [ip-addr]
+  (ReverseMap/fromAddress ip-addr))</pre></td></tr><tr><td class="docs"><h2>Resource Records</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Functions for creating new instances of common resource record types.</p>
 
 <p>If you aren't familiar with a particular resource record type, then I suggest you read some RFCs or wikipedia :)
 It should be noted that there are many more resource record types, I've just chosen what I believe to be the most common.
 More might be added later.</p>
 
-<p>For each resource record type, there are two functions. Pretending that xx was a resource record type for a moment, we would have
-rr-xx and rr-xx-with-defaults.
-They are called differently.</p>
+<p>For each resource record type, there are two ways to call the function. Pretending that xx was a resource record type for a moment, we would have:</p>
 
 <pre><code>
 (rr-xx {:zone "foo.com" :additional-info "more"})
@@ -3091,21 +3116,23 @@ They are called differently.</p>
 <p>vs.</p>
 
 <pre><code>
-(rr-xx-with-defaults "foo.com" "more")
+(rr-xx "foo.com" "more")
 </code></pre>
 
 <p>It should be noted that the first form allows you to override any default values by placing them in the map, whereas the second form does not.</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Function for creating a NS resource record.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn rr-ns [{:keys [zone dclass ttl the-ns] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
-  (NSRecord. (to-name zone) (int dclass) (long ttl) (to-name the-ns)))</pre></td></tr><tr><td class="docs"><p>Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn rr-ns-with-defaults [zone the-ns]
-  (rr-ns {:zone zone :the-ns the-ns}))</pre></td></tr><tr><td class="docs"><p>Function for creating a DS resource record.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn rr-ns
+  ([{:keys [zone dclass ttl the-ns] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
+    (NSRecord. (to-name zone) (int dclass) (long ttl) (to-name the-ns)))
+  ([zone the-ns]
+    (rr-ns {:zone zone :the-ns the-ns})))</pre></td></tr><tr><td class="docs"><p>Function for creating a DS resource record.</p>
 
 <p>key-tag is called footprint in the Java DNS library</p>
-</td><td class="codes"><pre class="brush: clojure">(defn rr-ds [{:keys [zone dclass ttl key-tag algorithm digest-type digest] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
-  (DSRecord. (to-name zone) (int dclass) (long ttl) key-tag algorithm digest-type digest))</pre></td></tr><tr><td class="docs"><p>Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn rr-ds-with-defaults [zone key-tag algorithm digest-type digest]
-  (rr-ds {:zone zone :key-tag key-tag :algorithm algorithm :digest-type digest-type :digest digest}))</pre></td></tr><tr><td class="docs"><p>Function for creating a SOA resource record.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn rr-ds
+  ([{:keys [zone dclass ttl key-tag algorithm digest-type digest] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
+    (DSRecord. (to-name zone) (int dclass) (long ttl) key-tag algorithm digest-type digest))
+  ([zone key-tag algorithm digest-type digest]
+    (rr-ds {:zone zone :key-tag key-tag :algorithm algorithm :digest-type digest-type :digest digest})))</pre></td></tr><tr><td class="docs"><p>Function for creating a SOA resource record.</p>
 
 <p>The serial is commonly in the following format </p>
 
@@ -3114,40 +3141,48 @@ They are called differently.</p>
 </code></pre>
 
 <p>What generally really matters is that each serial number is numerically larger than the previous ones issued.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn rr-soa [{:keys [zone dclass ttl host admin serial refresh retry expire minimum] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults) refresh (:refresh soa-defaults) retry (:retry soa-defaults) expire (:expire soa-defaults) minimum (:minimum soa-defaults)}}]
-  (SOARecord. (to-name zone) (int dclass) (long ttl) (to-name host) (to-name admin) (long serial) (long refresh) (long retry) (long expire) (long minimum)))</pre></td></tr><tr><td class="docs"><p>Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn rr-soa-with-defaults [zone host admin serial]
-  (rr-soa {:zone zone :host host :admin admin :serial serial}))</pre></td></tr><tr><td class="docs"><p>Function for creating a TXT resource record.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn rr-txt [{:keys [zone dclass ttl lines] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
-  (TXTRecord. (to-name zone) (int dclass) (long ttl) (to-list lines)))</pre></td></tr><tr><td class="docs"><p>Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn rr-txt-with-defaults [zone lines]
-  (rr-txt {:zone zone :lines lines}))</pre></td></tr><tr><td class="docs"><p>Function for creating a MX resource record.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn rr-mx [{:keys [zone dclass ttl priority target] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}] ; todo add default priority?
-  (MXRecord. (to-name zone) (int dclass) (long ttl) (int priority) (to-name target)))</pre></td></tr><tr><td class="docs"><p>Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn rr-mx-with-defaults [zone priority target]
-  (rr-mx {:zone zone :priority priority :target target}))</pre></td></tr><tr><td class="docs"><p>Function for creating a CNAME resource record.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn rr-cname [{:keys [zone dclass ttl alias] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
-  (CNAMERecord. (to-name zone) (int dclass) (long ttl) (to-name alias)))</pre></td></tr><tr><td class="docs"><p>Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn rr-cname-with-defaults [zone alias]
-  (rr-cname {:zone zone :alias alias}))</pre></td></tr><tr><td class="docs"><p>Function for creating a PTR resource record.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn rr-ptr [{:keys [zone dclass ttl target] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
-  (PTRRecord. (to-name zone) (int dclass) (long ttl) (to-name target)))</pre></td></tr><tr><td class="docs"><p>Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn rr-ptr-with-defaults [zone target]
-  (rr-ptr {:zone zone :target target}))</pre></td></tr><tr><td class="docs"><p>Function for creating an A resource record.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn rr-a [{:keys [zone dclass ttl address] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
-  (ARecord. (to-name zone) (int dclass) (long ttl) (to-inet-address address)))</pre></td></tr><tr><td class="docs"><p>Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn rr-a-with-defaults [zone address]
-  (rr-a {:zone zone :address address}))</pre></td></tr><tr><td class="docs"><p>Function for creating an AAAA resource record.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn rr-aaaa [{:keys [zone dclass ttl address] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
-  (ARecord. (to-name zone) (int dclass) (long ttl) (to-inet-address address)))</pre></td></tr><tr><td class="docs"><p>Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn rr-aaaa-with-defaults [zone address]
-  (rr-aaaa {:zone zone :address address}))</pre></td></tr><tr><td class="docs"><h3>Dummy functions</h3>
+</td><td class="codes"><pre class="brush: clojure">(defn rr-soa
+  ([{:keys [zone dclass ttl host admin serial refresh retry expire minimum] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults) refresh (:refresh soa-defaults) retry (:retry soa-defaults) expire (:expire soa-defaults) minimum (:minimum soa-defaults)}}]
+    (SOARecord. (to-name zone) (int dclass) (long ttl) (to-name host) (to-name admin) (long serial) (long refresh) (long retry) (long expire) (long minimum)))
+  ([zone host admin serial]
+      (rr-soa {:zone zone :host host :admin admin :serial serial})))</pre></td></tr><tr><td class="docs"><p>Function for creating a TXT resource record.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn rr-txt
+  ([{:keys [zone dclass ttl lines] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
+    (TXTRecord. (to-name zone) (int dclass) (long ttl) (to-list lines)))
+  ([zone lines]
+    (rr-txt {:zone zone :lines lines})))</pre></td></tr><tr><td class="docs"><p>Function for creating a MX resource record.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn rr-mx
+  ([{:keys [zone dclass ttl priority target] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}] ; todo add default priority?
+    (MXRecord. (to-name zone) (int dclass) (long ttl) (int priority) (to-name target)))
+  ([zone priority target]
+      (rr-mx {:zone zone :priority priority :target target})))</pre></td></tr><tr><td class="docs"><p>Function for creating a CNAME resource record.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn rr-cname
+  ([{:keys [zone dclass ttl alias] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
+    (CNAMERecord. (to-name zone) (int dclass) (long ttl) (to-name alias)))
+  ([zone alias]
+      (rr-cname {:zone zone :alias alias})))</pre></td></tr><tr><td class="docs"><p>Function for creating a PTR resource record.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn rr-ptr
+  ([{:keys [zone dclass ttl target] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
+    (PTRRecord. (to-name zone) (int dclass) (long ttl) (to-name target)))
+  ([zone target]
+      (rr-ptr {:zone zone :target target})))</pre></td></tr><tr><td class="docs"><p>Function for creating an A resource record.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn rr-a
+  ([{:keys [zone dclass ttl address] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
+    (ARecord. (to-name zone) (int dclass) (long ttl) (to-inet-address address)))
+  ([zone address]
+      (rr-a {:zone zone :address address})))</pre></td></tr><tr><td class="docs"><p>Function for creating an AAAA resource record.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn rr-aaaa
+  ([{:keys [zone dclass ttl address] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
+    (ARecord. (to-name zone) (int dclass) (long ttl) (to-inet-address address)))
+  ([zone address]
+      (rr-aaaa {:zone zone :address address})))</pre></td></tr><tr><td class="docs"><h3>Dummy functions</h3>
 
 <p>(part of the hack to create an empty zone)</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>You almost certainly should not call this function.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn- dummy-soa [zone-name] (rr-soa {:zone zone-name :dclass dflt-dclass :ttl dflt-ttl :host zone-name :admin zone-name :serial 0 :refresh 0 :retry 0 :expire 0 :minimum 0}))</pre></td></tr><tr><td class="docs"><p>You almost certainly should not call this function.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn- dummy-ns [zone-name] (rr-ns {:zone zone-name :dclass dflt-dclass :ttl dflt-ttl :the-ns zone-name}))</pre></td></tr><tr><td class="docs"><h2>Common DNS tasks</h2>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>These are helpful from a REPL for example, but not generally in a program because they print results to standard out.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- dummy-soa [zone-name]
+  (rr-soa {:zone zone-name :dclass dflt-dclass :ttl dflt-ttl :host zone-name :admin zone-name :serial 0 :refresh 0 :retry 0 :expire 0 :minimum 0}))</pre></td></tr><tr><td class="docs"><p>You almost certainly should not call this function.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- dummy-ns [zone-name]
+  (rr-ns {:zone zone-name :dclass dflt-dclass :ttl dflt-ttl :the-ns zone-name}))</pre></td></tr><tr><td class="docs"><h2>Common DNS tasks</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Lookup hostname(s). This prints the result to stdout, it does not return a seq of the data.</p>
 
 <p>This can be used like so:</p>
@@ -3167,15 +3202,30 @@ They are called differently.</p>
 <pre><code>
 (apply dns-lookup ["www.google.com" "www.bing.com"])
 </code></pre>
-</td><td class="codes"><pre class="brush: clojure">(defn dns-lookup [&amp; to-lookups] (lookup/main (into-array String to-lookups)))</pre></td></tr><tr><td class="docs"><p>Lookup hostname(s) by resource record type. This prints the result to stdout, it does not return a seq of the data.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn dns-lookup-to-stdout [&amp; to-lookups] (lookup/main (into-array String to-lookups)))</pre></td></tr><tr><td class="docs"><p>Lookup hostname(s) by resource record type. This prints the result to stdout, it does not return a seq of the data.</p>
 
 <p>example:</p>
 
 <pre><code>
 (dns-loookup-by-type Type/PTR "www.google.com" "www.bing.com")
 </code></pre>
-</td><td class="codes"><pre class="brush: clojure">(defn dns-lookup-by-type [rr-type &amp; to-lookups] (lookup/main (into-array String (into [&quot;-t&quot; (Type/string rr-type)] to-lookups))))</pre></td></tr><tr><td class="docs"><p>todo - add function for reverse lookup</p>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>dig is a DNS utility that provides a great deal more detail than a simple lookup. It contains all the DNS information in the UDP packets.
+</td><td class="codes"><pre class="brush: clojure">(defn dns-lookup-by-type-to-stdout [rr-type &amp; to-lookups] (lookup/main (into-array String (into [&quot;-t&quot; (Type/string rr-type)] to-lookups))))</pre></td></tr><tr><td class="docs"><p>Returns a map with two keys (aliases and answers). Each maps to a sequence.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn dns-lookup
+  ([{:keys [to-lookup rr-type] :or {rr-type Type/A}}]
+    (let [lkup (Lookup. (to-name to-lookup) (int rr-type))]
+      (.run lkup)
+      { :aliases (seq (.getAliases lkup))
+        :answers (if (= (.getResult lkup) Lookup/SUCCESSFUL)
+                   (seq (.getAnswers lkup))
+                   [])}))
+  ([to-lookup rr-type] (dns-lookup {:to-lookup to-lookup :rr-type rr-type})))</pre></td></tr><tr><td class="docs"><p>Returns the hostname when passed an ip-address (a reverse DNS lookup).</p>
+</td><td class="codes"><pre class="brush: clojure">(defn reverse-dns-lookup [^String ip-address]
+  (.getHostByAddr (.createNameService (DNSJavaNameServiceDescriptor.)) (ip-address-to-byte-array ip-address)))</pre></td></tr><tr><td class="docs"><p>Executes a DNS query by passing in a resource record to use as the query. You can optionally provide a resolver.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn dns-query
+  ([rr]
+    (.send (SimpleResolver.) (Message/newQuery rr)))
+  ([rslvr rr]
+    (.send rslvr (Message/newQuery rr))))</pre></td></tr><tr><td class="docs"><p>dig is a DNS utility that provides a great deal more detail than a simple lookup. It contains all the DNS information in the UDP packets.
 dig's options look something like:</p>
 
 <pre><code>
@@ -3201,7 +3251,7 @@ here are the supported options...</p>
 
 <p>example</p>
 
-<p>(dns-dig {:tcp true :ignore-trunction true :print-query true})</p>
+<p>(dns-dig-to-stdout {:tcp true :ignore-trunction true :print-query true})</p>
 
 <p>and options I decided not to support</p>
 
@@ -3210,7 +3260,7 @@ here are the supported options...</p>
 -e &lt;edns&gt; -- not supported here
 -d &lt;edns&gt; -- not supported here
 </code></pre>
-</td><td class="codes"><pre class="brush: clojure">(defn dns-dig
+</td><td class="codes"><pre class="brush: clojure">(defn dns-dig-to-stdout
   [{the-server :server the-name :name the-type :type options-map :options the-class :dclass :as the-args :or {:dclass DClass/IN}}]
   {:pre [(all-or-none the-args [:server :type :dclass])]} ; if :server is present, :class and :type must be as well (for all permutations...)
     (dig/main (into-array String (filter seq (into [the-server the-name the-type the-class] (convert-dig-options options-map))))))</pre></td></tr><tr><td class="docs"><h2>Ways to get a Zone</h2>
@@ -3234,7 +3284,7 @@ here are the supported options...</p>
           (rr-txt {:zone "b.6.0.2.ip6.arpa" :lines "clojure is fun"}))
 </code></pre>
 </td><td class="codes"><pre class="brush: clojure">(defn new-zone [zone-name ^SOARecord the-soa &amp; rrs]
-  {:pre  [(rr-has? Type/NS rrs)]}
+  {:pre  [(has-rr-of-type? Type/NS rrs)]}
   (Zone. (to-name zone-name) (into-array Record (conj the-soa rrs))))</pre></td></tr><tr><td class="docs"><p>DNS Java requires a SOA and at least one NS record. We'll put placeholders in there and then 
 remove them, thus creating an empty zone. This allows zonelets (or fragments) to be created
 and later stitched together to form a complete zone.</p>
@@ -3248,7 +3298,7 @@ and later stitched together to form a complete zone.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn parse-master [zone]
   (Master. zone))</pre></td></tr><tr><td class="docs"><h2>Things you can do with an RRSet</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Generally, prefer to get a seq of resource records, but Java DNS has these RRSet objects, so we expose them as an intermediate abstraction.</p>
-</td><td class="codes"><pre class="brush: clojure">(defn rrs-from-rrset [rrset]
+</td><td class="codes"><pre class="brush: clojure">(defn rrs-from-rrset [^RRset rrset]
   (iterator-seq (.rrs rrset)))</pre></td></tr><tr><td class="docs"><h2>Things you can do with a Zone</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Print the zone as a string</p>
 </td><td class="codes"><pre class="brush: clojure">(defn zone-to-str [zone]
@@ -3275,10 +3325,10 @@ and later stitched together to form a complete zone.</p>
   (seq (.answers (.findRecords zone (to-name zone-name) (int zone-type)))))</pre></td></tr><tr><td class="docs"><p>This returns a seq of all the resource records from a zone.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn find-records [zone zone-name zone-type]
   (doall (map #(rrs-from-rrset %) (find-rrsets zone zone-name zone-type))))</pre></td></tr><tr><td class="docs"><h2>Master files</h2>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>Prefer a zone to a master file</p>
-</td><td class="codes"></td></tr><tr><td class="docs"><p>todo need to introduce a protocol here to get the rrs from a master/zone?</p>
+</td><td class="codes"></td></tr><tr><td class="docs"><p>todo should I to introduce a protocol here to get the rrs from a master/zone?</p>
 
-<p>Get the resource records from a master file. Note that this closes the master input stream, which makes this a one shot object.</p>
+<p>Get the resource records from a master file. Note that this closes the master input stream, which makes this a one shot object.
+Unless if you really need this, I recommend using a Zone.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn rrs-from-master [master]
   (let [v (.nextRecord master)]
     (when-not (nil? v)
