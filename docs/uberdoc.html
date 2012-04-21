@@ -3071,7 +3071,11 @@ e.g. {:tcp true} will return ["-t"]
 and {:ignore-trunction true :print-query true} will return ["-i","-p"]
 </code></pre>
 </td><td class="codes"><pre class="brush: clojure">(defn- convert-dig-options [options-map]
-  (filter seq [(when (:tcp options-map) &quot;-t&quot;) (when (:ignore-trunction options-map) &quot;-i&quot;) (when (:print-query options-map) &quot;-p&quot;)]))</pre></td></tr><tr><td class="docs"><p>given a map and a sequence of keys, it verifies that either all the keys from the sequence are present in the map or none of them are.</p>
+  (filter seq [(when (:tcp options-map) &quot;-t&quot;) (when (:ignore-trunction options-map) &quot;-i&quot;) (when (:print-query options-map) &quot;-p&quot;)]))</pre></td></tr><tr><td class="docs"><p>Utility method that prefixes a dig server with '@' or returns nil if the server was not specified.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- dig-server [ds]
+  (when ds (str &quot;@&quot; ds)))</pre></td></tr><tr><td class="docs"><p>Returns a seq of the-name prefixed with "-x" if this is a reverse query, otherwise it just returns the-name</p>
+</td><td class="codes"><pre class="brush: clojure">(defn- dig-name [the-name is-reverse]
+  (if is-reverse [&quot;-x&quot; the-name] [the-name]))</pre></td></tr><tr><td class="docs"><p>given a map and a sequence of keys, it verifies that either all the keys from the sequence are present in the map or none of them are.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn- all-or-none [m s]
   (or (every? #(contains? m %) s)
       (not-any? #(contains? m %) s)))</pre></td></tr><tr><td class="docs"><p>Returns (int 4) for IPv4, (int 6) for IPv6 and error otherwise.</p>
@@ -3194,22 +3198,27 @@ More might be added later.</p>
 <p>or with multiple values:</p>
 
 <pre><code>
-(dns-lookup "www.google.com" "www.bing.com")
+(dns-lookup-to-stdout "www.google.com" "www.bing.com")
 </code></pre>
 
 <p>or if you have a seq of things to look up:</p>
 
 <pre><code>
-(apply dns-lookup ["www.google.com" "www.bing.com"])
+(apply dns-lookup-to-stdout ["www.google.com" "www.bing.com"])
 </code></pre>
 </td><td class="codes"><pre class="brush: clojure">(defn dns-lookup-to-stdout [&amp; to-lookups] (lookup/main (into-array String to-lookups)))</pre></td></tr><tr><td class="docs"><p>Lookup hostname(s) by resource record type. This prints the result to stdout, it does not return a seq of the data.</p>
 
 <p>example:</p>
 
 <pre><code>
-(dns-loookup-by-type Type/PTR "www.google.com" "www.bing.com")
+(dns-loookup-by-type-to-stdout Type/PTR "www.google.com" "www.bing.com")
 </code></pre>
-</td><td class="codes"><pre class="brush: clojure">(defn dns-lookup-by-type-to-stdout [rr-type &amp; to-lookups] (lookup/main (into-array String (into [&quot;-t&quot; (Type/string rr-type)] to-lookups))))</pre></td></tr><tr><td class="docs"><p>Returns a map with two keys (aliases and answers). Each maps to a sequence.</p>
+</td><td class="codes"><pre class="brush: clojure">(defn dns-lookup-by-type-to-stdout [rr-type &amp; to-lookups] (lookup/main (into-array String (into [&quot;-t&quot; (Type/string rr-type)] to-lookups))))</pre></td></tr><tr><td class="docs"><p>Returns a map with two keys (aliases and answers). Each maps to a sequence.
+Example</p>
+
+<pre><code>
+(dns-lookup "www.google.com" Type/A)
+</code></pre>
 </td><td class="codes"><pre class="brush: clojure">(defn dns-lookup
   ([{:keys [to-lookup rr-type] :or {rr-type Type/A}}]
     (let [lkup (Lookup. (to-name to-lookup) (int rr-type))]
@@ -3218,15 +3227,25 @@ More might be added later.</p>
         :answers (if (= (.getResult lkup) Lookup/SUCCESSFUL)
                    (seq (.getAnswers lkup))
                    [])}))
-  ([to-lookup rr-type] (dns-lookup {:to-lookup to-lookup :rr-type rr-type})))</pre></td></tr><tr><td class="docs"><p>Returns the hostname when passed an ip-address (a reverse DNS lookup).</p>
+  ([to-lookup rr-type] (dns-lookup {:to-lookup to-lookup :rr-type rr-type})))</pre></td></tr><tr><td class="docs"><p>Returns the hostname when passed an ip-address (a reverse DNS lookup).
+Example</p>
+
+<pre><code>
+(reverse-dns-lookup "74.125.227.81")
+</code></pre>
 </td><td class="codes"><pre class="brush: clojure">(defn reverse-dns-lookup [^String ip-address]
   (.getHostByAddr (.createNameService (DNSJavaNameServiceDescriptor.)) (ip-address-to-byte-array ip-address)))</pre></td></tr><tr><td class="docs"><p>Executes a DNS query by passing in a resource record to use as the query. You can optionally provide a resolver.</p>
 </td><td class="codes"><pre class="brush: clojure">(defn dns-query
   ([rr]
     (.send (SimpleResolver.) (Message/newQuery rr)))
   ([rslvr rr]
-    (.send rslvr (Message/newQuery rr))))</pre></td></tr><tr><td class="docs"><p>dig is a DNS utility that provides a great deal more detail than a simple lookup. It contains all the DNS information in the UDP packets.
-dig's options look something like:</p>
+    (.send rslvr (Message/newQuery rr))))</pre></td></tr><tr><td class="docs"><p>dig is a DNS utility that provides a great deal more detail than a simple lookup. It contains all the DNS information in the UDP packets.</p>
+
+<p><em>While dig is fantastic, use this function with extreme caution. If you pass in invalid options, it will for the JVM process to exit.</em></p>
+
+<p>I <em>HIGHLY</em> recommend that you use the dns-query function instead of this one!</p>
+
+<p>dig's options look something like:</p>
 
 <pre><code>
 dig [@server] name [&lt;type&gt;] [&lt;class&gt;] [&lt;options&gt;]
@@ -3235,7 +3254,7 @@ dig [@server] name [&lt;type&gt;] [&lt;class&gt;] [&lt;options&gt;]
 <p>The type defaults to A and dclass defaults to IN
 A simple example:</p>
 
-<p>(dns-dig {:name "www.google.com"})</p>
+<p>(dns-dig-to-stdout {:name "www.google.com"})</p>
 
 <p>Again, this prints the result to standard out.
 use -x &lt;name&gt; for "name" to get a reverse lookup
@@ -3260,10 +3279,13 @@ here are the supported options...</p>
 -e &lt;edns&gt; -- not supported here
 -d &lt;edns&gt; -- not supported here
 </code></pre>
+
+<p>todo this seems to be ignoring the RR type at the moment... or it does some "smart" conversion of the type...</p>
 </td><td class="codes"><pre class="brush: clojure">(defn dns-dig-to-stdout
-  [{the-server :server the-name :name the-type :type options-map :options the-class :dclass :as the-args :or {:dclass DClass/IN}}]
-  {:pre [(all-or-none the-args [:server :type :dclass])]} ; if :server is present, :class and :type must be as well (for all permutations...)
-    (dig/main (into-array String (filter seq (into [the-server the-name the-type the-class] (convert-dig-options options-map))))))</pre></td></tr><tr><td class="docs"><h2>Ways to get a Zone</h2>
+  ([{the-server :server the-name :name the-type :type options-map :options dclass :dclass is-reverse :is-reverse :as the-args :or {dclass (:dclass rr-defaults) is-reverse false}}]
+  {:pre [(all-or-none the-args [:type :dclass])]} ; if :dclass is present then :type must be as well and vice versa
+    (dig/main (into-array String (filter seq (into (flatten [(dig-server the-server) (dig-name the-name is-reverse) (str the-type) (str dclass)]) (convert-dig-options options-map))))))
+  ([the-name is-reverse] (dig/main (into-array String (flatten [(dig-name the-name is-reverse) (str Type/A) (str DClass/IN)])))))</pre></td></tr><tr><td class="docs"><h2>Ways to get a Zone</h2>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Generally prefer a Zone over a Master.</p>
 </td><td class="codes"></td></tr><tr><td class="docs"><p>Read the zone from a file. It can be a java.io.File object or a String file path.</p>
 

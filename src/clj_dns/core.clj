@@ -68,6 +68,14 @@
 (defn- convert-dig-options [options-map]
   (filter seq [(when (:tcp options-map) "-t") (when (:ignore-trunction options-map) "-i") (when (:print-query options-map) "-p")]))
 
+;; Utility method that prefixes a dig server with '@' or returns nil if the server was not specified.
+(defn- dig-server [ds]
+  (when ds (str "@" ds)))
+
+;; Returns a seq of the-name prefixed with "-x" if this is a reverse query, otherwise it just returns the-name
+(defn- dig-name [the-name is-reverse]
+  (if is-reverse ["-x" the-name] [the-name]))
+
 ;; given a map and a sequence of keys, it verifies that either all the keys from the sequence are present in the map or none of them are.
 (defn- all-or-none [m s]
   (or (every? #(contains? m %) s)
@@ -211,11 +219,11 @@
 ;; </code></pre>
 ;; or with multiple values:
 ;; <pre><code>
-;; (dns-lookup "www.google.com" "www.bing.com")
+;; (dns-lookup-to-stdout "www.google.com" "www.bing.com")
 ;; </code></pre>
 ;; or if you have a seq of things to look up:
 ;; <pre><code>
-;; (apply dns-lookup ["www.google.com" "www.bing.com"])
+;; (apply dns-lookup-to-stdout ["www.google.com" "www.bing.com"])
 ;; </code></pre>
 (defn dns-lookup-to-stdout [& to-lookups] (lookup/main (into-array String to-lookups)))
 
@@ -223,11 +231,15 @@
 ;;
 ;; example:
 ;; <pre><code>
-;; (dns-loookup-by-type Type/PTR "www.google.com" "www.bing.com")
+;; (dns-loookup-by-type-to-stdout Type/PTR "www.google.com" "www.bing.com")
 ;; </code></pre>
 (defn dns-lookup-by-type-to-stdout [rr-type & to-lookups] (lookup/main (into-array String (into ["-t" (Type/string rr-type)] to-lookups))))
 
 ;; Returns a map with two keys (aliases and answers). Each maps to a sequence.
+;; Example
+;; <pre><code>
+;; (dns-lookup "www.google.com" Type/A)
+;; </code></pre>
 (defn dns-lookup
   ([{:keys [to-lookup rr-type] :or {rr-type Type/A}}]
     (let [lkup (Lookup. (to-name to-lookup) (int rr-type))]
@@ -239,6 +251,10 @@
   ([to-lookup rr-type] (dns-lookup {:to-lookup to-lookup :rr-type rr-type})))
 
 ;; Returns the hostname when passed an ip-address (a reverse DNS lookup).
+;; Example
+;; <pre><code>
+;; (reverse-dns-lookup "74.125.227.81")
+;; </code></pre>
 (defn reverse-dns-lookup [^String ip-address]
   (.getHostByAddr (.createNameService (DNSJavaNameServiceDescriptor.)) (ip-address-to-byte-array ip-address)))
 
@@ -250,6 +266,11 @@
     (.send rslvr (Message/newQuery rr))))
 
 ;; dig is a DNS utility that provides a great deal more detail than a simple lookup. It contains all the DNS information in the UDP packets.
+;; 
+;; *While dig is fantastic, use this function with extreme caution. If you pass in invalid options, it will for the JVM process to exit.*
+;;
+;; I *HIGHLY* recommend that you use the dns-query function instead of this one!
+;;
 ;; dig's options look something like:
 ;;
 ;; <pre><code>
@@ -259,7 +280,7 @@
 ;; The type defaults to A and dclass defaults to IN
 ;; A simple example:
 ;;
-;; (dns-dig {:name "www.google.com"})
+;; (dns-dig-to-stdout {:name "www.google.com"})
 ;;
 ;; Again, this prints the result to standard out.
 ;; use -x &lt;name&gt; for "name" to get a reverse lookup
@@ -282,10 +303,13 @@
 ;; -e &lt;edns&gt; -- not supported here
 ;; -d &lt;edns&gt; -- not supported here
 ;; </code></pre>
+;;
+;; todo this seems to be ignoring the RR type at the moment... or it does some "smart" conversion of the type...
 (defn dns-dig-to-stdout
-  [{the-server :server the-name :name the-type :type options-map :options the-class :dclass :as the-args :or {:dclass DClass/IN}}]
-  {:pre [(all-or-none the-args [:server :type :dclass])]} ; if :server is present, :class and :type must be as well (for all permutations...)
-    (dig/main (into-array String (filter seq (into [the-server the-name the-type the-class] (convert-dig-options options-map))))))
+  ([{the-server :server the-name :name the-type :type options-map :options dclass :dclass is-reverse :is-reverse :as the-args :or {dclass (:dclass rr-defaults) is-reverse false}}]
+  {:pre [(all-or-none the-args [:type :dclass])]} ; if :dclass is present then :type must be as well and vice versa
+    (dig/main (into-array String (filter seq (into (flatten [(dig-server the-server) (dig-name the-name is-reverse) (str the-type) (str dclass)]) (convert-dig-options options-map))))))
+  ([the-name is-reverse] (dig/main (into-array String (flatten [(dig-name the-name is-reverse) (str Type/A) (str DClass/IN)])))))
 
 ;; ## Ways to get a Zone
 
