@@ -50,7 +50,7 @@ dns-lookup returns a map with two keywords :aliases and :answers, so if you only
 
     (:answers (dns-lookup "www.google.com" Type/A))
 
-or
+#### Query
     
     (dns-query (rr-ns …))
     (dns-query a-resolver (rr-ns ...))
