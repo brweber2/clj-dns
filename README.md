@@ -46,6 +46,10 @@ or something like this
     (import 'org.xbill.DNS.Type)
     (dns-lookup "www.google.com" Type/A)
     
+dns-lookup returns a map with two keywords :aliases and :answers, so if you only care about the answers:
+
+    (:answers (dns-lookup "www.google.com" Type/A))
+
 or
     
     (dns-query (rr-ns …))
