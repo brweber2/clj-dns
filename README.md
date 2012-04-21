@@ -14,7 +14,7 @@ It should be noted that not all functionality from the Java DNS library is expos
 
 Leiningen
 
-    :dependencies [[com.brweber2/clj-dns "0.0.1-SNAPSHOT"]]
+    :dependencies [[com.brweber2/clj-dns "0.0.1"]]
 
 ## License
 
