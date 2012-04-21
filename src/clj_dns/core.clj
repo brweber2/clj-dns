@@ -1,20 +1,25 @@
 (ns clj-dns.core
-  (:import (org.xbill.DNS Name Zone Record Type Master DClass Address SOARecord NSRecord DSRecord CNAMERecord TXTRecord ARecord AAAARecord MXRecord PTRRecord))
+  (:import (org.xbill.DNS Name Zone Record Type Master DClass Address Message SimpleResolver SOARecord NSRecord DSRecord CNAMERecord TXTRecord ARecord AAAARecord MXRecord PTRRecord Lookup ReverseMap))
+  (:import (org.xbill.DNS.spi DNSJavaNameServiceDescriptor))
   (:import lookup)
   (:import dig)
   (:import java.io.File)
   (:import java.util.List)
   (:import clojure.lang.ISeq))
 
+;; The dnsjava service provider, used for reverse DNS lookup.
+;; is this necessary???
+(System/setProperty "sun.net.spi.nameservice.provider.1" "dns,dnsjava")
+
 ;; ## Default values 
 ;; (used for creating resource records)
 
 ;; special defaults for SOA records
 (def soa-defaults {
-  :refresh 1800   ; 30 minutes
-  :retry 900      ; 15 minutes
-  :expire 691200  ; 1 week 1 day
-  :minimum 10800  ; 3 hours
+  :refresh   1800  ; 30 minutes
+  :retry      900  ; 15 minutes
+  :expire  691200  ; 1 week 1 day
+  :minimum  10800  ; 3 hours
   })
 
 ;; TTL is time-to-live
@@ -27,7 +32,7 @@
 (def rr-defaults {:ttl dflt-ttl :dclass dflt-dclass})
 
 ;; ## Helper functions 
-;; (todo protocol better for the instance? cases...?)
+;; (todo protocol better for the 'instance?' cases...?)
 
 ;; Convert a string, keyword or symbol to a java.net.InetAddress
 (defn to-inet-address [a] (Address/getByName (name a)))
@@ -53,22 +58,44 @@
 ;; Predicate that checks if any resource record in the rrs seq has the provided resource record type.
 ;;
 ;; The rr-type is an int, but there are constants for the values on org.xbill.DNS.Type (e.g. Type/NS)
-(defn rr-has? [rr-type & rrs] (some #(= rr-type (.getType %)) rrs))
+(defn has-rr-of-type? [rr-type & rrs] (some #(= rr-type (.getType %)) rrs))
 
 ;; converts a map of options for dig to a seq of strings
 ;; <pre><code>
 ;; e.g. {:tcp true} will return '("-t")
 ;; and {:ignore-trunction true :print-query true} will return '("-i" "-p")
 ;; </code></pre>
-(defn- convert-dig-options
-  [options-map]
+(defn- convert-dig-options [options-map]
   (filter seq [(when (:tcp options-map) "-t") (when (:ignore-trunction options-map) "-i") (when (:print-query options-map) "-p")]))
 
 ;; given a map and a sequence of keys, it verifies that either all the keys from the sequence are present in the map or none of them are.
-(defn- all-or-none
-  [m s] ; map m must contain each keyword from s or none of them
+(defn- all-or-none [m s]
   (or (every? #(contains? m %) s)
       (not-any? #(contains? m %) s)))
+
+;; Returns 4 for IPv4, 6 for IPv6 and error otherwise. to-lookup should be a string ip address.
+(defn- get-family [to-lookup]
+  (Address/familyOf (Address/getByAddress to-lookup)))
+
+;; Takes a string ip address and converts it to a byte[]
+(defn ip-address-to-byte-array [to-lookup]
+  (Address/toByteArray to-lookup (get-family to-lookup)))
+
+;; Takes and IP address and returns the reverse zone.
+;; 
+;; IPv4 Example:
+;; <pre><code>
+;; 118.193.14.61 -> 61.14.193.118.in-addr.arpa.
+;; </code></pre>
+;; So basically, reverse the octects and append '.in-addr.arpa.' Please note the trailing period.
+;;
+;; IPv6 Example
+;; <pre><code>
+;; 3721:abcd:: -> 0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.0.d.c.b.a.1.2.7.3.ip6.arpa.
+;; </code></pre>
+;; Again note the trailing period and remember that the reverse zone is 'ip6' and not 'ipv6'.
+(defn ip-to-reverse-str [ip-addr]
+  (ReverseMap/fromAddress ip-addr))
 
 ;; ## Resource Records
 
@@ -78,35 +105,31 @@
 ;; It should be noted that there are many more resource record types, I've just chosen what I believe to be the most common.
 ;; More might be added later.
 ;;
-;; For each resource record type, there are two functions. Pretending that xx was a resource record type for a moment, we would have
-;; rr-xx and rr-xx-with-defaults.
-;; They are called differently.
+;; For each resource record type, there are two ways to call the function. Pretending that xx was a resource record type for a moment, we would have:
 ;; <pre><code>
 ;; (rr-xx {:zone "foo.com" :additional-info "more"})
 ;; </code></pre>
 ;; vs.
 ;; <pre><code>
-;; (rr-xx-with-defaults "foo.com" "more")
+;; (rr-xx "foo.com" "more")
 ;; </code></pre>
 ;; It should be noted that the first form allows you to override any default values by placing them in the map, whereas the second form does not.
 
 ;; Function for creating a NS resource record.
-(defn rr-ns [{:keys [zone dclass ttl the-ns] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
-  (NSRecord. (to-name zone) (int dclass) (long ttl) (to-name the-ns)))
-
-;; Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.
-(defn rr-ns-with-defaults [zone the-ns]
-  (rr-ns {:zone zone :the-ns the-ns}))
+(defn rr-ns
+  ([{:keys [zone dclass ttl the-ns] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
+    (NSRecord. (to-name zone) (int dclass) (long ttl) (to-name the-ns)))
+  ([zone the-ns]
+    (rr-ns {:zone zone :the-ns the-ns})))
 
 ;; Function for creating a DS resource record.
 ;;
 ;; key-tag is called footprint in the Java DNS library
-(defn rr-ds [{:keys [zone dclass ttl key-tag algorithm digest-type digest] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
-  (DSRecord. (to-name zone) (int dclass) (long ttl) key-tag algorithm digest-type digest))
-
-;; Convenience function, that uses the defaults for ttl and dclass and doesn't require a map.
-(defn rr-ds-with-defaults [zone key-tag algorithm digest-type digest]
-  (rr-ds {:zone zone :key-tag key-tag :algorithm algorithm :digest-type digest-type :digest digest}))
+(defn rr-ds
+  ([{:keys [zone dclass ttl key-tag algorithm digest-type digest] :or {ttl (:ttl rr-defaults) dclass (:dclass rr-defaults)}}]
+    (DSRecord. (to-name zone) (int dclass) (long ttl) key-tag algorithm digest-type digest))
+  ([zone key-tag algorithm digest-type digest]
+    (rr-ds {:zone zone :key-tag key-tag :algorithm algorithm :digest-type digest-type :digest digest})))
 
 ;; Function for creating a SOA resource record.
 ;;
@@ -174,10 +197,12 @@
 ;; (part of the hack to create an empty zone)
 
 ;; You almost certainly should not call this function.
-(defn- dummy-soa [zone-name] (rr-soa {:zone zone-name :dclass dflt-dclass :ttl dflt-ttl :host zone-name :admin zone-name :serial 0 :refresh 0 :retry 0 :expire 0 :minimum 0}))
+(defn- dummy-soa [zone-name]
+  (rr-soa {:zone zone-name :dclass dflt-dclass :ttl dflt-ttl :host zone-name :admin zone-name :serial 0 :refresh 0 :retry 0 :expire 0 :minimum 0}))
 
 ;; You almost certainly should not call this function.
-(defn- dummy-ns [zone-name] (rr-ns {:zone zone-name :dclass dflt-dclass :ttl dflt-ttl :the-ns zone-name}))
+(defn- dummy-ns [zone-name]
+  (rr-ns {:zone zone-name :dclass dflt-dclass :ttl dflt-ttl :the-ns zone-name}))
 
 ;; ## Common DNS tasks 
 
@@ -207,7 +232,26 @@
 ;; </code></pre>
 (defn dns-lookup-by-type [rr-type & to-lookups] (lookup/main (into-array String (into ["-t" (Type/string rr-type)] to-lookups))))
 
-;; todo - add function for reverse lookup
+;; Returns a map with two keys (aliases and answers). Each maps to a sequence.
+(defn lookup-dns [{:keys [to-lookup rr-type] :or {rr-type Type/A}}]
+  (let [lkup (Lookup. (to-name to-lookup) (int rr-type))]
+    (.run lkup)
+    { :aliases (seq (.getAliases lkup))
+      :answers (if (= (.getResult lkup) Lookup/SUCCESSFUL)
+                 (seq (.getAnswers lkup))
+                 [])}))
+
+;; Needs a better name :(
+(defn lookup-dns-with-defaults [to-lookup] (lookup-dns {:to-lookup to-lookup}))
+
+(defn reverse-dns-lookup [to-lookup]
+  (.getHostByAddr (.createNameService (DNSJavaNameServiceDescriptor.)) (ip-address-to-byte-array to-lookup)))
+
+(defn dns-query
+  ([rr]
+    (.send (SimpleResolver.) (Message/newQuery rr)))
+  ([rslvr rr]
+    (.send rslvr (Message/newQuery rr))))
 
 ;; dig is a DNS utility that provides a great deal more detail than a simple lookup. It contains all the DNS information in the UDP packets.
 ;; dig's options look something like:
@@ -270,7 +314,7 @@
 ;;           (rr-txt {:zone "b.6.0.2.ip6.arpa" :lines "clojure is fun"}))
 ;; </code></pre>
 (defn new-zone [zone-name ^SOARecord the-soa & rrs]
-  {:pre  [(rr-has? Type/NS rrs)]}
+  {:pre  [(has-rr-of-type? Type/NS rrs)]}
   (Zone. (to-name zone-name) (into-array Record (conj the-soa rrs))))
 
 ;; DNS Java requires a SOA and at least one NS record. We'll put placeholders in there and then 
